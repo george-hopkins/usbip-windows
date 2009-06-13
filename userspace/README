@@ -1,0 +1,47 @@
+It is just a proof of concept now.
+
+To build userspace usbip tool:
+
+On a linux host:
+
+1. install mingw32
+
+For debian based linux distribution, run apt-get install mingw32
+
+2. run make in this directory
+
+
+To build kernel driver:
+
+On a windows host:
+
+1. install windows DDK
+  
+   I download version 6001.18002 from MSDN site. I think the other
+version perhaps will be ok too.
+
+2. enter windows xp build env, and run i.bat in this directroy to
+build and install the kernel driver. 
+
+   you need devcon (from windows DDK sample) to install it.
+
+To test:
+
+You'd better test the kernel driver in a virtual windows guest. Then
+it won't crash your pc when this stuff BSOD.
+
+run usbip -l xxx.xxx.xxx.xxx to show the exported usb device from linux
+run usbip -a xxx.xxx.xxx.xxx x-x to use it.
+
+Now some code is hard coded in the driver, so you can only test usb mouse
+now. (This should change and improve quickly)
+
+About LICENSE:
+
+I'd like to release these code under GPL,
+but since the kernel driver is started from a ddk sample (toaster sample),
+there is some MS license stuff at the beginning of every driver file.
+
+But I think I will change/rewrite the driver codes heavyly and at last I will
+make the driver compiled with mingw32, then I will delete all of the MS license 
+stuff.

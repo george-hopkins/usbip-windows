@@ -1,0 +1,19 @@
+TARGETNAME=BusEnum
+TARGETTYPE=DRIVER
+
+INCLUDES = ..\inc
+
+NTTARGETFILE0=$(OBJ_PATH)\$(O)\busenum.bmf
+
+
+TARGETLIBS=  $(DDK_LIB_PATH)\wdmsec.lib \
+	     $(DDK_LIB_PATH)\ntstrsafe.lib
+
+SOURCES= busenum.rc \
+         busenum.c \
+         pnp.c \
+	 power.c \
+         buspdo.c \
+	 wmi.c
+
+_NT_TARGET_VERSION=$(_NT_TARGET_VERSION_WINXP)
