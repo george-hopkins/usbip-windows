@@ -262,6 +262,39 @@ void usbip_header_correct_endian(struct usbip_header *pdu, int send)
 	}
 }
 
+char big_buf[65536];
+
+#define OUT_Q_LEN 2
+long out_q_seqnum_array[OUT_Q_LEN];
+
+int record_out(long num)
+{
+	int i;
+	long old_num;
+	for(i=0;i<OUT_Q_LEN;i++){
+		old_num=InterlockedCompareExchange(
+				out_q_seqnum_array+i,
+				num,0);
+		if(old_num==0)
+			return 1;
+	}
+	return 0;
+}
+
+int check_out(unsigned long num)
+{
+	int i;
+	unsigned long old_num;
+	for(i=0;i<OUT_Q_LEN;i++){
+		old_num=InterlockedCompareExchange(
+				out_q_seqnum_array+i,
+				0,num);
+		if(old_num==num)
+			return 1;
+	}
+	return 0;
+}
+
 DWORD WINAPI sock_thread(LPVOID p)
 {
 	struct fd_info * fdi=p;
@@ -282,14 +315,23 @@ DWORD WINAPI sock_thread(LPVOID p)
 			break;
 		}
 		usbip_header_correct_endian(&u, 0);
-		//FIXME
-		len = sizeof(u)+u.u.ret_submit.actual_length;
+	//	usbip_dump_header(&u);
+		if(check_out(htonl(u.base.seqnum))){
+			ret=WriteFile(fdi->dev, (char *)&u, sizeof(u), &out, &ov);
+			if(!ret||out!=sizeof(u)){
+				err("last error:%ld\n",GetLastError());
+				err("out:%ld ret:%d len:%d\n",out,ret,len);
+				err("write dev failed");
+				break;
+			}
+			continue;
+		}
+		len=sizeof(u)+u.u.ret_submit.actual_length;
 		buf=malloc(len);
 		if(NULL==buf){
 			err("malloc\n");
 			break;
 		}
-//		usbip_dump_header(&u);
 		memcpy(buf, &u, sizeof(u));
 		ret=recv(fdi->sock, buf+sizeof(u),
 				u.u.ret_submit.actual_length,0);
@@ -314,7 +356,7 @@ DWORD WINAPI sock_thread(LPVOID p)
 DWORD WINAPI dev_thread(LPVOID p)
 {
 	struct fd_info *fdi=p;
-	struct usbip_header u;
+	struct usbip_header *u;
 	int ret;
 	unsigned long len;
 	HANDLE ev;
@@ -323,9 +365,10 @@ DWORD WINAPI dev_thread(LPVOID p)
 	ev=CreateEvent(NULL, FALSE, FALSE, NULL);
 	ov.Offset=ov.OffsetHigh=0;
 	ov.hEvent=ev;
+	u=(struct usbip_header *)big_buf;
 	do {
 		len=0;
-		ret=ReadFile(fdi->dev, &u, sizeof(u), &len, &ov);
+		ret=ReadFile(fdi->dev, big_buf, sizeof(big_buf), &len, &ov);
 		if(!ret &&  (x=GetLastError())!=ERROR_IO_PENDING){
 			err("read:%d x:%ld\n",ret, x);
 			break;
@@ -334,13 +377,29 @@ DWORD WINAPI dev_thread(LPVOID p)
 			WaitForSingleObject(ev, INFINITE);
 		ret = GetOverlappedResult(fdi->dev,
 			    &ov, &len, FALSE);
-		if(!ret||len!=sizeof(u)){
+		if(!ret||len<sizeof(u)){
 			err("read dev ret:%d len:%ld\n",ret, len);
 			break;
 		}
-		len=send(fdi->sock, (char *)&u, sizeof(u), 0);
-		if(len!=sizeof(u)){
-			err("send sock len:%ld\n", len);
+		if(!u->base.direction){
+			if(len!= ntohl(u->u.cmd_submit.transfer_buffer_length)
+				+sizeof(*u)){
+				err("read dev ret:%d len:%ld\n",ret, len);
+				break;
+		       }
+		} else {
+			if(len!= sizeof(*u)){
+				err("read dev ret:%d len:%ld\n",ret, len);
+				break;
+		       }
+		}
+		if(!u->base.direction&&!record_out(u->base.seqnum)){
+			err("out q full");
+			break;
+		}
+		ret=send(fdi->sock, big_buf, len, 0);
+		if(ret!=len){
+			err("send sock len:%ld, ret:%d\n", len, ret);
 			break;
 		}
 	} while(1);

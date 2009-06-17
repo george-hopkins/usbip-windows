@@ -218,6 +218,32 @@ struct usbip_header {
 
 
 
+void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_REQUEST *req)
+{
+	PUSB_CONFIGURATION_DESCRIPTOR cfg;
+	if(req->Hdr.Function != URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE||
+		req->DescriptorType!=USB_CONFIGURATION_DESCRIPTOR_TYPE)
+		return;
+	cfg=(PUSB_CONFIGURATION_DESCRIPTOR) req->TransferBuffer;
+	if(req->TransferBufferLength<sizeof(*cfg))
+		return;
+	if(cfg->bDescriptorType!=USB_CONFIGURATION_DESCRIPTOR_TYPE||
+			cfg->wTotalLength!=req->TransferBufferLength)
+		return;
+	KdPrint(("save config for using when select config\n"));
+	pdodata->dev_config = ExAllocatePoolWithTag(
+		NonPagedPool,
+		req->TransferBufferLength, BUSENUM_POOL_TAG);
+	if(!pdodata->dev_config){
+		KdPrint(("Warning, can't malloc %d bytes\n",
+					req->TransferBufferLength));
+		return;
+	}
+	RtlCopyMemory(pdodata->dev_config, req->TransferBuffer,
+			req->TransferBufferLength);
+	return;
+}
+
 int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 {
     KIRQL oldirql;
@@ -226,8 +252,12 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     PIO_STACK_LOCATION irpstack;
     struct usbip_header *h;
     PIRP ioctl_irp;
-    char *buf;
-    struct _URB_BULK_OR_INTERRUPT_TRANSFER * urb;
+    char *buf, *urb_buf;
+    int in;
+    /* This is a quick hack, in windows, the offsets of all types of
+     * TansferFlags and TransferBuffer and TransferBufferLength are the same,
+     * so we just use _URB_BULK_OR_INTERRUPT_TRANSFER */
+    struct _URB_BULK_OR_INTERRUPT_TRANSFER *urb;
     NTSTATUS ioctl_status = STATUS_INVALID_PARAMETER;
     int found=0;
 
@@ -238,7 +268,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	    return STATUS_INVALID_PARAMETER;
     }
     h = irp->AssociatedIrp.SystemBuffer;
-    if(len!=h->u.ret_submit.actual_length+sizeof(*h)){
+    if(len<sizeof(*h)){
 	    KdPrint(("write, error len %d\n", len));
 	    return STATUS_INVALID_PARAMETER;
     }
@@ -267,10 +297,40 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     urb =  irpstack->Parameters.Others.Argument1;
     if(NULL == urb)
 	    goto end;
-    buf = (char *)h + sizeof(*h);
-    urb->TransferBufferLength = min((unsigned long)h->u.ret_submit.actual_length,
-		    urb->TransferBufferLength);
-    RtlCopyMemory(urb->TransferBuffer, buf, urb->TransferBufferLength);
+    switch(urb->Hdr.Function){
+	case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
+	case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
+		in=1;
+		break;
+	case URB_FUNCTION_CLASS_INTERFACE:
+	case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
+		in=urb->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+		break;
+	defualt:
+		KdPrint(("Warning, not supported func:%d\n",
+					urb->Hdr.Function));
+		goto end;
+    }
+    if(h->u.ret_submit.actual_length > urb->TransferBufferLength){
+	KdPrint(("Warning, ret too big %d %d!\n",
+				h->u.ret_submit.actual_length,
+				urb->TransferBufferLength));
+	goto end;
+    }
+    if(in&&len!=h->u.ret_submit.actual_length+sizeof(*h)){
+	KdPrint(("Warning, ret is not enough %d %d!\n",
+				h->u.ret_submit.actual_length,
+				urb->TransferBufferLength));
+	goto end;
+    }
+    urb->TransferBufferLength = h->u.ret_submit.actual_length;
+    if(in){
+	RtlCopyMemory(urb->TransferBuffer, (char *)(h+1), urb->TransferBufferLength);
+	if(NULL==pdodata->dev_config)
+		try_save_config(pdodata, urb);
+    }
+    KdPrint(("Sucess Finish URB FUNC:%d %s\n", urb->Hdr.Function,
+				func2name(urb->Hdr.Function)));
     ioctl_status=STATUS_SUCCESS;
 end:
     ioctl_irp->IoStatus.Status = ioctl_status;
@@ -326,28 +386,209 @@ END:
     return status;
 }
 
+#define USBDEVFS_URB_SHORT_NOT_OK	0x01
+#define USBDEVFS_URB_ISO_ASAP		0x02
+#define USBDEVFS_URB_NO_FSBR		0x20
+#define USBDEVFS_URB_ZERO_PACKET	0x40
+#define USBDEVFS_URB_NO_INTERRUPT	0x80
+
+unsigned int transflag(unsigned int flags)
+{
+	unsigned int linux_flags;
+	if(!(flags&USBD_SHORT_TRANSFER_OK))
+		linux_flags|=USBDEVFS_URB_SHORT_NOT_OK;
+	if(flags&USBD_START_ISO_TRANSFER_ASAP)
+		linux_flags|=USBDEVFS_URB_ISO_ASAP;
+	return RtlUlongByteSwap(linux_flags);
+}
+
+void set_cmd_submit_usbip_header(struct usbip_header *h,
+		unsigned long seqnum, unsigned int devid,
+		unsigned int direct, unsigned int ep,
+		unsigned int flags,  unsigned int len)
+{
+	h->base.command   = RtlUlongByteSwap(USBIP_CMD_SUBMIT);
+	h->base.seqnum    = RtlUlongByteSwap(seqnum);
+        h->base.devid     = RtlUlongByteSwap(devid);
+	h->base.direction = RtlUlongByteSwap(direct);
+	h->base.ep        = RtlUlongByteSwap(ep);
+	h->u.cmd_submit.transfer_flags = transflag(flags);
+        h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
+        h->u.cmd_submit.start_frame = 0;
+        h->u.cmd_submit.number_of_packets = 0;
+        h->u.cmd_submit.interval = 0;
+}
+
+struct usb_ctrl_setup {
+    unsigned char bRequestType;
+    unsigned char  bRequest;
+    unsigned short wValue;
+    unsigned short wIndex;
+    unsigned short wLength;
+};
+
+static void build_setup_packet(struct usb_ctrl_setup *setup,
+		unsigned char direct_in,
+		unsigned char type,
+		unsigned char recip,
+		unsigned char request)
+{
+	setup->bRequestType = type<<5;
+	if(direct_in)
+		setup->bRequestType|=USB_ENDPOINT_DIRECTION_MASK;
+	setup->bRequestType|=recip;
+	setup->bRequest = request;
+}
+
+#define CHECK_SIZE_RW \
+if(NULL==buf) \
+	return STATUS_BUFFER_TOO_SMALL; \
+if(req->TransferFlags & USBD_TRANSFER_DIRECTION_IN) { \
+	if (len < sizeof(*h)) \
+		return STATUS_BUFFER_TOO_SMALL; \
+} else { \
+	if (len < sizeof(*h) + req->TransferBufferLength) \
+		return STATUS_BUFFER_TOO_SMALL; \
+}
+
+#define CHECK_SIZE_READ \
+if (len < sizeof(*h) || NULL == buf) \
+	return STATUS_BUFFER_TOO_SMALL; \
+
+#define handle2ep(a) (((unsigned long)a)&0xff)
+
+int prepare_class_interface_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
+		char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	int in=req->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+	*copied = 0;
+
+	CHECK_SIZE_RW
+
+	if(req->RequestTypeReservedBits!=0x22){
+		KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
+		"Request:%02x Value:%02x Index:%02x\r\n",
+		req->TransferFlags, req->TransferBuffer,
+		req->TransferBufferLength,
+		req->RequestTypeReservedBits, req->Request,
+		req->Value, req->Index));
+	}
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		in, 0,
+		req->TransferFlags, req->TransferBufferLength);
+	build_setup_packet(setup,
+	in,
+	BMREQUEST_CLASS, BMREQUEST_TO_INTERFACE, req->Request);
+//FIXME what is the usage of RequestTypeReservedBits?
+	setup->wLength = req->TransferBufferLength;
+	setup->wValue = req->Value;
+	setup->wIndex = req->Index;
+
+	*copied=sizeof(*h);
+	if(!in){
+		RtlCopyMemory((char *)h+1, req->TransferBuffer,
+				req->TransferBufferLength);
+		*copied+=req->TransferBufferLength;
+	}
+	return  STATUS_SUCCESS;
+}
+
+int prepare_get_intf_descriptor_urb(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req,
+		char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	*copied = 0;
+
+	CHECK_SIZE_READ
+
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		USBIP_DIR_IN, 0,
+		USBD_SHORT_TRANSFER_OK, req->TransferBufferLength);
+	build_setup_packet(setup,
+	USBIP_DIR_IN,
+	BMREQUEST_STANDARD, BMREQUEST_TO_INTERFACE, USB_REQUEST_GET_DESCRIPTOR);
+
+	setup->wLength = req->TransferBufferLength;
+	setup->wValue = (req->DescriptorType<<8)|req->Index;
+
+	KdPrint(("pbuf:%p len:%d Index:%02x"
+	"DescriptorType:%02x LanguageId:%02x\r\n",
+	req->TransferBuffer,
+	req->TransferBufferLength,
+	req->Index,
+	req->DescriptorType,
+	req->LanguageId));
+
+	*copied=sizeof(*h);
+	return STATUS_SUCCESS;
+}
+
+int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req,
+		char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	*copied = 0;
+
+	CHECK_SIZE_READ
+
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		USBIP_DIR_IN, 0,
+		USBD_SHORT_TRANSFER_OK, req->TransferBufferLength);
+	build_setup_packet(setup,
+	USBIP_DIR_IN,
+	BMREQUEST_STANDARD, BMREQUEST_TO_DEVICE, USB_REQUEST_GET_DESCRIPTOR);
+
+	setup->wLength = req->TransferBufferLength;
+	setup->wValue = (req->DescriptorType<<8) |req->Index<<8;
+
+	switch(req->DescriptorType){
+		case USB_DEVICE_DESCRIPTOR_TYPE:
+		case USB_CONFIGURATION_DESCRIPTOR_TYPE:
+			setup->wIndex = 0;
+			break;
+		case USB_STRING_DESCRIPTOR_TYPE:
+			setup->wIndex = req->LanguageId;
+			break;
+		default:
+			return STATUS_INVALID_PARAMETER;
+	}
+	*copied=sizeof(*h);
+	return STATUS_SUCCESS;
+}
 
 int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
 		char *buf, int len,  int *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
+	int in = req->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+
 	*copied = 0;
-	if(len< sizeof(*h)||NULL==buf)
-		return STATUS_BUFFER_TOO_SMALL;
-//FIXME
-#define htonl RtlUlongByteSwap
-	h->base.command   = htonl(USBIP_CMD_SUBMIT);
-	h->base.seqnum    = htonl(seqnum);
-        h->base.devid     = htonl(devid);
-	h->base.direction = htonl(USBIP_DIR_IN);
-	h->base.ep        = htonl(0x81);
-	h->u.cmd_submit.transfer_flags = 0;
-        h->u.cmd_submit.transfer_buffer_length = htonl(req->TransferBufferLength);
-        h->u.cmd_submit.start_frame = 0;
-        h->u.cmd_submit.number_of_packets = 0;
-        h->u.cmd_submit.interval = 0;
+
+	CHECK_SIZE_RW
+
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		in,
+		handle2ep(req->PipeHandle),
+		req->TransferFlags, req->TransferBufferLength);
+
 	*copied=sizeof(*h);
+	if(!in){
+		RtlCopyMemory((char *)h+1, req->TransferBuffer,
+				req->TransferBufferLength);
+		*copied+=req->TransferBufferLength;
+	}
 	return STATUS_SUCCESS;
 }
 
@@ -377,9 +618,18 @@ int set_read_irp_data(PIRP read_irp, PIRP ioctl_irp, unsigned long seq_num,
     }
     switch (urb->UrbHeader.Function){
 		case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
-			KdPrint(("do transfer\r\n"));
 			return prepare_bulk_urb((struct _URB_BULK_OR_INTERRUPT_TRANSFER *)urb, buf, len,
 			&read_irp->IoStatus.Information, seq_num, devid);
+		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
+			return prepare_get_dev_descriptor_urb((struct _URB_CONTROL_DESCRIPTOR_REQUEST *)urb, buf, len,
+			&read_irp->IoStatus.Information, seq_num, devid);
+		case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
+			return prepare_get_intf_descriptor_urb((struct _URB_CONTROL_DESCRIPTOR_REQUEST *)urb, buf, len,
+			&read_irp->IoStatus.Information, seq_num, devid);
+		case URB_FUNCTION_CLASS_INTERFACE:
+			return prepare_class_interface_urb((struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST *)urb, buf, len,
+			&read_irp->IoStatus.Information, seq_num, devid);
+
 		default:
 			break;
      }
@@ -623,242 +873,152 @@ Bus_Close (
     return status;
 }
 
-
-/* mostly the same values as the Bochs USB Mouse device */
-static const unsigned char qemu_mouse_dev_descriptor[] = {
-	0x12,       /*  u8 bLength; */
-	0x01,       /*  u8 bDescriptorType; Device */
-	0x00, 0x01, /*  u16 bcdUSB; v1.0 */
-
-	0x00,	    /*  u8  bDeviceClass; */
-	0x00,	    /*  u8  bDeviceSubClass; */
-	0x00,       /*  u8  bDeviceProtocol; [ low/full speeds only ] */
-	0x08,       /*  u8  bMaxPacketSize0; 8 Bytes */
-
-	0x28, 0x06, /*  u16 idVendor; */
- 	0x10, 0x00, /*  u16 idProduct; */
-	0x00, 0x00, /*  u16 bcdDevice */
-
-	0x03,       /*  u8  iManufacturer; */
-	0x02,       /*  u8  iProduct; */
-	0x01,       /*  u8  iSerialNumber; */
-	0x01        /*  u8  bNumConfigurations; */
-};
-
-static const unsigned char qemu_mouse_config_descriptor[] = {
-	/* one configuration */
-	0x09,       /*  u8  bLength; */
-	0x02,       /*  u8  bDescriptorType; Configuration */
-	0x22, 0x00, /*  u16 wTotalLength; */
-	0x01,       /*  u8  bNumInterfaces; (1) */
-	0x01,       /*  u8  bConfigurationValue; */
-	0x04,       /*  u8  iConfiguration; */
-	0xa0,       /*  u8  bmAttributes;
-				 Bit 7: must be set,
-				     6: Self-powered,
-				     5: Remote wakeup,
-				     4..0: resvd */
-	50,         /*  u8  MaxPower; */
-
-	/* USB 1.1:
-	 * USB 2.0, single TT organization (mandatory):
-	 *	one interface, protocol 0
-	 *
-	 * USB 2.0, multiple TT organization (optional):
-	 *	two interfaces, protocols 1 (like single TT)
-	 *	and 2 (multiple TT mode) ... config is
-	 *	sometimes settable
-	 *	NOT IMPLEMENTED
-	 */
-
-	/* one interface */
-	0x09,       /*  u8  if_bLength; */
-	0x04,       /*  u8  if_bDescriptorType; Interface */
-	0x00,       /*  u8  if_bInterfaceNumber; */
-	0x00,       /*  u8  if_bAlternateSetting; */
-	0x01,       /*  u8  if_bNumEndpoints; */
-	0x03,       /*  u8  if_bInterfaceClass; */
-	0x01,       /*  u8  if_bInterfaceSubClass; */
-	0x02,       /*  u8  if_bInterfaceProtocol; [usb1.1 or single tt] */
-	0x07,       /*  u8  if_iInterface; */
-
-        /* HID descriptor */
-        0x09,        /*  u8  bLength; */
-        0x21,        /*  u8 bDescriptorType; */
-        0x01, 0x00,  /*  u16 HID_class */
-        0x00,        /*  u8 country_code */
-        0x01,        /*  u8 num_descriptors */
-        0x22,        /*  u8 type; Report */
-        52, 0,       /*  u16 len */
-
-	/* one endpoint (status change endpoint) */
-	0x07,       /*  u8  ep_bLength; */
-	0x05,       /*  u8  ep_bDescriptorType; Endpoint */
-	0x81,       /*  u8  ep_bEndpointAddress; IN Endpoint 1 */
- 	0x03,       /*  u8  ep_bmAttributes; Interrupt */
- 	0x04, 0x00, /*  u16 ep_wMaxPacketSize; */
-	0x0a,       /*  u8  ep_bInterval; (255ms -- usb 2.0 spec) */
-};
-
-static const unsigned char qemu_mouse_hid_report_descriptor[] = {
-    0x05, 0x01,		/* Usage Page (Generic Desktop) */
-    0x09, 0x02,		/* Usage (Mouse) */
-    0xa1, 0x01,		/* Collection (Application) */
-    0x09, 0x01,		/*   Usage (Pointer) */
-    0xa1, 0x00,		/*   Collection (Physical) */
-    0x05, 0x09,		/*     Usage Page (Button) */
-    0x19, 0x01,		/*     Usage Minimum (1) */
-    0x29, 0x03,		/*     Usage Maximum (3) */
-    0x15, 0x00,		/*     Logical Minimum (0) */
-    0x25, 0x01,		/*     Logical Maximum (1) */
-    0x95, 0x03,		/*     Report Count (3) */
-    0x75, 0x01,		/*     Report Size (1) */
-    0x81, 0x02,		/*     Input (Data, Variable, Absolute) */
-    0x95, 0x01,		/*     Report Count (1) */
-    0x75, 0x05,		/*     Report Size (5) */
-    0x81, 0x01,		/*     Input (Constant) */
-    0x05, 0x01,		/*     Usage Page (Generic Desktop) */
-    0x09, 0x30,		/*     Usage (X) */
-    0x09, 0x31,		/*     Usage (Y) */
-    0x09, 0x38,		/*     Usage (Wheel) */
-    0x15, 0x81,		/*     Logical Minimum (-0x7f) */
-    0x25, 0x7f,		/*     Logical Maximum (0x7f) */
-    0x75, 0x08,		/*     Report Size (8) */
-    0x95, 0x03,		/*     Report Count (3) */
-    0x81, 0x06,		/*     Input (Data, Variable, Relative) */
-    0xc0,		/*   End Collection */
-    0xc0,		/* End Collection */
-};
-
-void try_copy(struct _URB_CONTROL_DESCRIPTOR_REQUEST *req, unsigned const char *buf,
-		unsigned int buf_len)
+static void * seek_to_next_desc(PUSB_CONFIGURATION_DESCRIPTOR config, unsigned int * offset,
+		unsigned char type)
 {
-	unsigned int len;
-	len=min(req->TransferBufferLength, buf_len);
-	RtlCopyMemory(req->TransferBuffer, buf, len);
-	req->TransferBufferLength = len;
+	unsigned int o=*offset;
+	PUSB_COMMON_DESCRIPTOR desc;
+	if(o>=config->wTotalLength)
+		return NULL;
+	do {
+		if(o + sizeof(*desc) > config->wTotalLength)
+			return NULL;
+		desc=(char *)config + o;
+		if(desc->bLength + o > config->wTotalLength)
+			return NULL;
+		o+=desc->bLength;
+		if(desc->bDescriptorType == type){
+			*offset = o;
+			return desc;
+		}
+	}while(1);
 }
 
-int class_interface(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req)
+int proc_select_config(PPDO_DEVICE_DATA pdodata,
+		struct _URB_SELECT_CONFIGURATION * req)
 {
+	unsigned int i, j;
+	unsigned int offset=0;
+	USBD_INTERFACE_INFORMATION *intf;
+	PUSB_INTERFACE_DESCRIPTOR intf_desc;
+	PUSB_ENDPOINT_DESCRIPTOR ep_desc;
 
-	KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
-	"Request:%02x Value:%02x Index:%02x\r\n",
-	req->TransferFlags, req->TransferBuffer,
-	req->TransferBufferLength,
-	req->RequestTypeReservedBits, req->Request,
-	req->Value, req->Index));
-	return  STATUS_SUCCESS;
-}
-
-int get_descriptor_from_interface(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req)
-{
-	KdPrint(("pbuf:%p len:%d Index:%02x"
-	"DescriptorType:%02x LanguageId:%02x\r\n",
-	req->TransferBuffer,
-	req->TransferBufferLength,
-	req->Index,
-	req->DescriptorType, 
-	req->LanguageId));
-	if(req->DescriptorType!=0x22){
-		KdPrint(("unknow what for\n"));
-		return STATUS_INSUFFICIENT_RESOURCES;
+	if(NULL==pdodata->dev_config){
+		KdPrint(("Warning, select config when have no get config\n"));
+		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	try_copy(req, qemu_mouse_hid_report_descriptor,
-					sizeof(qemu_mouse_hid_report_descriptor));
-	return STATUS_SUCCESS;
-}
-
-int get_descriptor_from_device(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req)
-{
-	switch(req->DescriptorType){
-		case USB_DEVICE_DESCRIPTOR_TYPE:
-			KdPrint(("get device descriptor\r\n"));
-			try_copy(req, qemu_mouse_dev_descriptor, 
-					sizeof(qemu_mouse_dev_descriptor));
-			break;
-		case USB_CONFIGURATION_DESCRIPTOR_TYPE:
-			KdPrint(("get config descriptor\r\n"));
-			try_copy(req, qemu_mouse_config_descriptor,
-					sizeof(qemu_mouse_config_descriptor));
-			break;
-		case USB_STRING_DESCRIPTOR_TYPE:
-			KdPrint(("Warning get string desc\r\n"));
-			return STATUS_INSUFFICIENT_RESOURCES;
-		default:
-			return STATUS_INVALID_PARAMETER;
+	if(!RtlEqualMemory(pdodata->dev_config,
+				req->ConfigurationDescriptor,
+				sizeof(*req->ConfigurationDescriptor))){
+		KdPrint(("Warning, not the same config desc\n"));
+		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	return STATUS_SUCCESS;
-}
-
-void proc_select_config(struct _URB_SELECT_CONFIGURATION * req)
-{
-	unsigned int i;
-	KdPrint(("config handle:%d\n", req->ConfigurationHandle));
-	KdPrint(("interface: len:%d num:%d class:%d subclass:%d"
-		"protocol:%d handle:%d numerofpipes:%d",
-		req->Interface.Length,
-		req->Interface.InterfaceNumber,
-		req->Interface.Class,
-		req->Interface.SubClass,
-		req->Interface.Protocol,
-		req->Interface.InterfaceHandle,
-		req->Interface.NumberOfPipes));
-	req->Interface.Class=3;
-	req->Interface.SubClass=1;
-	req->Interface.Protocol=2;
-	req->Interface.InterfaceHandle = (USBD_INTERFACE_HANDLE) 0x12345678;
+	/* it has no means */
 	req->ConfigurationHandle=(USBD_CONFIGURATION_HANDLE) 0x12345678;
-	for(i=0;i<req->Interface.NumberOfPipes;i++){
-		KdPrint(("pipe %d:\n"
-	    "MaximumTransferSize: %d\n"
-	    "EndpointAddress: %d\n"
-	    "Interval: %d\n"
-	    "PipeType: %d\n"
-	    "PiPeHandle: %d\n"
-	    "MaximumTransferSize %d\n"
-	    "PipeFlags %d\n", i,
-	    req->Interface.Pipes[i].MaximumTransferSize,
-	    req->Interface.Pipes[i].EndpointAddress,
-	    req->Interface.Pipes[i].Interval,
-	    req->Interface.Pipes[i].PipeType,
-	    req->Interface.Pipes[i].PipeHandle,
-	    req->Interface.Pipes[i].MaximumTransferSize,
-	    req->Interface.Pipes[i].PipeFlags));
+	intf = &req->Interface;
+	for(i=0; i<req->ConfigurationDescriptor->bNumInterfaces; i++){
+		if((char *)intf + sizeof(*intf) - (char *)req
+				>req->Hdr.Length){
+			KdPrint(("Warning, too small urb for select config\n"));
+			return STATUS_INVALID_PARAMETER;
+		}
+		if((char *)intf + sizeof(*intf) +
+				(intf->NumberOfPipes-1)*sizeof(intf->Pipes[0])
+				- (char *)req
+				> req->Hdr.Length){
+			KdPrint(("Warning, too small urb for select config\n"));
+			return STATUS_INVALID_PARAMETER;
+		}
+		intf_desc = seek_to_next_desc(
+				pdodata->dev_config,
+				&offset, USB_INTERFACE_DESCRIPTOR_TYPE);
+		if(NULL==intf_desc){
+			KdPrint(("Warning, no interface desc\n"));
+			return STATUS_INVALID_DEVICE_REQUEST;
+		}
+		if(intf_desc->bNumEndpoints!=
+				intf->NumberOfPipes){
+			KdPrint(("Warning, number of pipes is no same%d %d\n",
+					intf_desc->bNumEndpoints,
+					intf->NumberOfPipes));
+			return STATUS_INVALID_DEVICE_REQUEST;
+		}
+		intf->Class=intf_desc->bInterfaceClass;
+		intf->SubClass=intf_desc->bInterfaceSubClass;
+		intf->Protocol=intf_desc->bInterfaceProtocol;
+		/* it has no means */
+		intf->InterfaceHandle = (USBD_INTERFACE_HANDLE) 0x12345678;
+		for(j=0; j<intf->NumberOfPipes;j++){
+			KdPrint(("pipe %d:\n"
+			    "MaximumTransferSize: %d\n"
+			    "EndpointAddress: %d\n"
+			    "Interval: %d\n"
+			    "PipeType: %d\n"
+			    "PiPeHandle: %d\n"
+			    "MaximumTransferSize %d\n"
+			    "PipeFlags %d\n", i,
+			    intf->Pipes[j].MaximumTransferSize,
+			    intf->Pipes[j].EndpointAddress,
+			    intf->Pipes[j].Interval,
+			    intf->Pipes[j].PipeType,
+			    intf->Pipes[j].PipeHandle,
+			    intf->Pipes[j].MaximumTransferSize,
+			    intf->Pipes[j].PipeFlags));
 
- 	    req->Interface.Pipes[i].EndpointAddress=0x81;
-	    req->Interface.Pipes[i].Interval=1;
-	    req->Interface.Pipes[i].PipeType=UsbdPipeTypeInterrupt;
-	    req->Interface.Pipes[i].PipeHandle=(USBD_PIPE_HANDLE) 0x12345678;
+			ep_desc = seek_to_next_desc(
+				pdodata->dev_config,
+				&offset, USB_ENDPOINT_DESCRIPTOR_TYPE);
+
+			if(NULL==ep_desc){
+				KdPrint(("Warning, no ep desc\n"));
+				return STATUS_INVALID_DEVICE_REQUEST;
+			}
+			intf->Pipes[j].EndpointAddress = ep_desc->bEndpointAddress;
+			intf->Pipes[j].Interval = ep_desc->bInterval;
+			/* FIXME */
+			intf->Pipes[j].PipeType = ep_desc->bmAttributes
+				& USB_ENDPOINT_TYPE_MASK;
+			intf->Pipes[j].PipeHandle=(USBD_PIPE_HANDLE)
+				ep_desc->bEndpointAddress;
+			KdPrint(("pipe %d:\n"
+			    "MaximumTransferSize: %d\n"
+			    "EndpointAddress: %d\n"
+			    "Interval: %d\n"
+			    "PipeType: %d\n"
+			    "PiPeHandle: %d\n"
+			    "MaximumTransferSize %d\n"
+			    "PipeFlags %d\n", i,
+			    intf->Pipes[j].MaximumTransferSize,
+			    intf->Pipes[j].EndpointAddress,
+			    intf->Pipes[j].Interval,
+			    intf->Pipes[j].PipeType,
+			    intf->Pipes[j].PipeHandle,
+			    intf->Pipes[j].MaximumTransferSize,
+			    intf->Pipes[j].PipeFlags));
+		}
+		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
+			sizeof(intf->Pipes[0]);
 	}
+	return STATUS_SUCCESS;
 }
 
-int proc_urb(void *arg)
+int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 {
 	PURB urb=(PURB) arg;
 	if(urb==NULL){
 		KdPrint(("null arg"));
 		return STATUS_INVALID_PARAMETER;
 	}
+	KdPrint(("URB FUNC:%d %s\n", urb->UrbHeader.Function,
+				func2name(urb->UrbHeader.Function)));
 	switch (urb->UrbHeader.Function){
-		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
-			KdPrint(("get descriptor:%p %d\n",
-			urb->UrbControlDescriptorRequest.TransferBuffer,
-			urb->UrbControlDescriptorRequest.TransferBufferLength));
-			return get_descriptor_from_device(arg);
-			break;
 		case URB_FUNCTION_SELECT_CONFIGURATION:
 			KdPrint(("select configuration\n"));
-			proc_select_config(arg);
-			return STATUS_SUCCESS;
+			return proc_select_config(pdodata, arg);
 		case URB_FUNCTION_CLASS_INTERFACE:
-			KdPrint(("class interface\r\n"));
-			return class_interface(arg);
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
-			KdPrint(("get descriptor from interface\r\n"));
-			return get_descriptor_from_interface(arg);
+		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
 		case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
-			KdPrint(("do transfer\r\n"));
 			return STATUS_PENDING;
 		default:
 			break;
@@ -954,7 +1114,7 @@ Bus_Internal_IoCtl (
     KdPrint(("internal control:%d %s\r\n", irpStack->Parameters.DeviceIoControl.IoControlCode,code2name(irpStack->Parameters.DeviceIoControl.IoControlCode)));
     switch(irpStack->Parameters.DeviceIoControl.IoControlCode){
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
-		    status=proc_urb(irpStack->Parameters.Others.Argument1);
+		    status=proc_urb(pdoData, irpStack->Parameters.Others.Argument1);
 		    break;
 	default:
 		    KdPrint(("Unknown Ioctrl code\n"));

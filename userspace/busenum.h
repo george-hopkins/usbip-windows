@@ -269,6 +269,7 @@ typedef struct _PDO_DEVICE_DATA
     PFILE_OBJECT fo;
     unsigned int devid;
     unsigned long seq_num;
+    char * dev_config;
 
     //
     // In order to reduce the complexity of the driver, I chose not

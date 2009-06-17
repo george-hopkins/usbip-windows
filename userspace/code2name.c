@@ -41,6 +41,52 @@ K_V( IOCTL_USB_HCD_GET_STATS_1 )
 K_V( IOCTL_USB_HCD_GET_STATS_2 )
 {0,0}};
 
+struct macro usb_funcs[]={
+K_V( URB_FUNCTION_SELECT_CONFIGURATION           )
+K_V( URB_FUNCTION_SELECT_INTERFACE               )
+K_V( URB_FUNCTION_ABORT_PIPE                     )
+K_V( URB_FUNCTION_TAKE_FRAME_LENGTH_CONTROL      )
+K_V( URB_FUNCTION_RELEASE_FRAME_LENGTH_CONTROL   )
+K_V( URB_FUNCTION_GET_FRAME_LENGTH               )
+K_V( URB_FUNCTION_SET_FRAME_LENGTH               )
+K_V( URB_FUNCTION_GET_CURRENT_FRAME_NUMBER       )
+K_V( URB_FUNCTION_CONTROL_TRANSFER               )
+K_V( URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER     )
+K_V( URB_FUNCTION_ISOCH_TRANSFER                 )
+K_V( URB_FUNCTION_RESET_PIPE                     )
+K_V( URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE     )
+K_V( URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT   )
+K_V( URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE  )
+K_V( URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE       )
+K_V( URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT     )
+K_V( URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE    )
+K_V( URB_FUNCTION_SET_FEATURE_TO_DEVICE          )
+K_V( URB_FUNCTION_SET_FEATURE_TO_INTERFACE       )
+K_V( URB_FUNCTION_SET_FEATURE_TO_ENDPOINT        )
+K_V( URB_FUNCTION_SET_FEATURE_TO_OTHER           )
+K_V( URB_FUNCTION_CLEAR_FEATURE_TO_DEVICE        )
+K_V( URB_FUNCTION_CLEAR_FEATURE_TO_INTERFACE     )
+K_V( URB_FUNCTION_CLEAR_FEATURE_TO_ENDPOINT      )
+K_V( URB_FUNCTION_CLEAR_FEATURE_TO_OTHER         )
+K_V( URB_FUNCTION_GET_STATUS_FROM_DEVICE         )
+K_V( URB_FUNCTION_GET_STATUS_FROM_INTERFACE      )
+K_V( URB_FUNCTION_GET_STATUS_FROM_ENDPOINT       )
+K_V( URB_FUNCTION_GET_STATUS_FROM_OTHER          )
+K_V( URB_FUNCTION_RESERVED0                      )
+K_V( URB_FUNCTION_VENDOR_DEVICE                  )
+K_V( URB_FUNCTION_VENDOR_INTERFACE               )
+K_V( URB_FUNCTION_VENDOR_ENDPOINT                )
+K_V( URB_FUNCTION_VENDOR_OTHER                   )
+K_V( URB_FUNCTION_CLASS_DEVICE                   )
+K_V( URB_FUNCTION_CLASS_INTERFACE                )
+K_V( URB_FUNCTION_CLASS_ENDPOINT                 )
+K_V( URB_FUNCTION_CLASS_OTHER                    )
+K_V( URB_FUNCTION_RESERVED                       )
+K_V( URB_FUNCTION_GET_CONFIGURATION              )
+K_V( URB_FUNCTION_GET_INTERFACE                  )
+K_V( URB_FUNCTION_LAST                           )
+{0,0}};
+
 const char * code2name(unsigned int code)
 {
 	int i;
@@ -49,4 +95,14 @@ const char * code2name(unsigned int code)
 			return usb_io_ctrls[i].name;
 	}
 	return "Unknown ioctl code";
+}
+
+const char * func2name(unsigned int func)
+{
+	int i;
+	for(i=0;usb_funcs[i].name;i++){
+		if(func==usb_funcs[i].code)
+			return usb_funcs[i].name;
+	}
+	return "Unknown func code";
 }

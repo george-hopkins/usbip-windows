@@ -235,7 +235,8 @@ Routine Description:
             SET_NEW_PNP_STATE(DeviceData, NotStarted);
             status = STATUS_SUCCESS;
         } else {
-            ASSERT(DeviceData->Present);
+           //ASSERT(DeviceData->Present);
+	    KdPrint(("Error! why we are not present\n"));
             status = STATUS_SUCCESS;
         }
         break;
