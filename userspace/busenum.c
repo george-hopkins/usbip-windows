@@ -125,6 +125,7 @@ struct usbip_header_basic {
 #define USBIP_CMD_UNLINK	0x0002
 #define USBIP_RET_SUBMIT	0x0003
 #define USBIP_RET_UNLINK	0x0004
+#define USBIP_RESET_DEV		0xFFFF
 	unsigned int command;
 
 	 /* sequencial number which identifies requests.
@@ -216,7 +217,7 @@ struct usbip_header {
 	} u;
 };
 
-
+#define handle2ep(a) (((unsigned long)a)&0xff)
 
 void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_REQUEST *req)
 {
@@ -244,6 +245,27 @@ void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_RE
 	return;
 }
 
+#define EPIPE 32
+#define EOVERFLOW 75
+
+unsigned int tran_usb_status(int linux_status,int in, int type)
+{
+	KdPrint(("linux status %d in %d type %d\n", linux_status,
+				in, type));
+	switch(linux_status){
+		case 0:
+			return USBD_STATUS_SUCCESS;
+		/* I guess it */
+		case -EPIPE:
+			return USBD_STATUS_ENDPOINT_HALTED;
+		case -EOVERFLOW:
+			return USBD_STATUS_DATA_OVERRUN;
+		default:
+			return USBD_STATUS_ERROR;
+	}
+	return USBD_STATUS_SUCCESS;
+}
+
 int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 {
     KIRQL oldirql;
@@ -253,7 +275,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     struct usbip_header *h;
     PIRP ioctl_irp;
     char *buf, *urb_buf;
-    int in;
+    int in, type;
     /* This is a quick hack, in windows, the offsets of all types of
      * TansferFlags and TransferBuffer and TransferBufferLength are the same,
      * so we just use _URB_BULK_OR_INTERRUPT_TRANSFER */
@@ -291,9 +313,17 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     }
     irp->IoStatus.Information = len;
     irpstack = IoGetCurrentIrpStackLocation(ioctl_irp);
-    if(irpstack->Parameters.DeviceIoControl.IoControlCode
-		    != IOCTL_INTERNAL_USB_SUBMIT_URB)
-	    goto end;
+
+    switch ( irpstack->Parameters.DeviceIoControl.IoControlCode ){
+	    case IOCTL_INTERNAL_USB_SUBMIT_URB:
+		    break;
+	    case IOCTL_INTERNAL_USB_RESET_PORT:
+		    ioctl_status = STATUS_SUCCESS;
+		    /* pass through */
+	    default:
+		    goto end;
+    }
+
     urb =  irpstack->Parameters.Others.Argument1;
     if(NULL == urb)
 	    goto end;
@@ -301,10 +331,15 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
 	case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
 		in=1;
+		type=USB_ENDPOINT_TYPE_CONTROL;
 		break;
 	case URB_FUNCTION_CLASS_INTERFACE:
-	case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
 		in=urb->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+		type=USB_ENDPOINT_TYPE_CONTROL;
+		break;
+	case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
+		in=handle2ep(urb->PipeHandle) & 0x80;
+		type=USB_ENDPOINT_TYPE_BULK;
 		break;
 	defualt:
 		KdPrint(("Warning, not supported func:%d\n",
@@ -324,11 +359,25 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	goto end;
     }
     urb->TransferBufferLength = h->u.ret_submit.actual_length;
-    if(in){
-	RtlCopyMemory(urb->TransferBuffer, (char *)(h+1), urb->TransferBufferLength);
+    if(in && urb->TransferBufferLength){
+	buf=NULL;
+	if(urb->TransferBuffer)
+		buf=urb->TransferBuffer;
+	else if (urb->TransferBufferMDL){
+		buf=MmGetSystemAddressForMdlSafe(
+		urb->TransferBufferMDL,
+		LowPagePriority);
+	} else
+		KdPrint(("No transferbuffer fo in\n"));
+	if(NULL==buf){
+		ioctl_status = STATUS_INSUFFICIENT_RESOURCES;
+		goto end;
+	}
+	RtlCopyMemory(buf, h+1, urb->TransferBufferLength);
 	if(NULL==pdodata->dev_config)
 		try_save_config(pdodata, urb);
     }
+    urb->Hdr.Status = tran_usb_status(h->u.ret_submit.status, in, type);
     KdPrint(("Sucess Finish URB FUNC:%d %s\n", urb->Hdr.Function,
 				func2name(urb->Hdr.Function)));
     ioctl_status=STATUS_SUCCESS;
@@ -394,7 +443,7 @@ END:
 
 unsigned int transflag(unsigned int flags)
 {
-	unsigned int linux_flags;
+	unsigned int linux_flags=0;
 	if(!(flags&USBD_SHORT_TRANSFER_OK))
 		linux_flags|=USBDEVFS_URB_SHORT_NOT_OK;
 	if(flags&USBD_START_ISO_TRANSFER_ASAP)
@@ -410,7 +459,7 @@ void set_cmd_submit_usbip_header(struct usbip_header *h,
 	h->base.command   = RtlUlongByteSwap(USBIP_CMD_SUBMIT);
 	h->base.seqnum    = RtlUlongByteSwap(seqnum);
         h->base.devid     = RtlUlongByteSwap(devid);
-	h->base.direction = RtlUlongByteSwap(direct);
+	h->base.direction = RtlUlongByteSwap(direct?USBIP_DIR_IN:USBIP_DIR_OUT);
 	h->base.ep        = RtlUlongByteSwap(ep);
 	h->u.cmd_submit.transfer_flags = transflag(flags);
         h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
@@ -455,7 +504,19 @@ if(req->TransferFlags & USBD_TRANSFER_DIRECTION_IN) { \
 if (len < sizeof(*h) || NULL == buf) \
 	return STATUS_BUFFER_TOO_SMALL; \
 
-#define handle2ep(a) (((unsigned long)a)&0xff)
+
+int prepare_reset_dev(char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		0, 0,
+		0, 0);
+	h->base.command = RtlUlongByteSwap(USBIP_RESET_DEV);
+	*copied=sizeof(*h);
+	return  STATUS_SUCCESS;
+}
 
 int prepare_class_interface_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
 		char *buf, int len,  int *copied, unsigned long seqnum,
@@ -490,9 +551,9 @@ int prepare_class_interface_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *re
 
 	*copied=sizeof(*h);
 	if(!in){
-		RtlCopyMemory((char *)h+1, req->TransferBuffer,
+		RtlCopyMemory(h+1, req->TransferBuffer,
 				req->TransferBufferLength);
-		*copied+=req->TransferBufferLength;
+		(*copied)+=req->TransferBufferLength;
 	}
 	return  STATUS_SUCCESS;
 }
@@ -571,7 +632,7 @@ int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	int in = req->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+	int in = handle2ep(req->PipeHandle) & 0x80;
 
 	*copied = 0;
 
@@ -585,9 +646,19 @@ int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
 
 	*copied=sizeof(*h);
 	if(!in){
-		RtlCopyMemory((char *)h+1, req->TransferBuffer,
-				req->TransferBufferLength);
-		*copied+=req->TransferBufferLength;
+		buf=NULL;
+		if(req->TransferBuffer)
+			buf=req->TransferBuffer;
+		else if (req->TransferBufferMDL){
+			buf=MmGetSystemAddressForMdlSafe(
+			req->TransferBufferMDL,
+			LowPagePriority);
+		} else
+			KdPrint(("No transferbuffer for out\n"));
+		if(NULL==buf)
+			return STATUS_INSUFFICIENT_RESOURCES;
+		RtlCopyMemory(h+1, buf, req->TransferBufferLength);
+		(*copied)+=req->TransferBufferLength;
 	}
 	return STATUS_SUCCESS;
 }
@@ -606,10 +677,14 @@ int set_read_irp_data(PIRP read_irp, PIRP ioctl_irp, unsigned long seq_num,
 
     iostack_irp = IoGetCurrentIrpStackLocation(ioctl_irp);
 
-    if(iostack_irp->Parameters.DeviceIoControl.IoControlCode
-		    != IOCTL_INTERNAL_USB_SUBMIT_URB){
-	    read_irp->IoStatus.Information = 0;
-	    return  STATUS_INVALID_DEVICE_REQUEST;
+    switch(iostack_irp->Parameters.DeviceIoControl.IoControlCode){
+	case IOCTL_INTERNAL_USB_SUBMIT_URB:
+		break;
+	case IOCTL_INTERNAL_USB_RESET_PORT:
+		return prepare_reset_dev(buf, len, &read_irp->IoStatus.Information,			seq_num,devid);
+	default:
+		read_irp->IoStatus.Information = 0;
+		return STATUS_INVALID_PARAMETER;
     }
     urb =  iostack_irp->Parameters.Others.Argument1;
     if(NULL == urb){
@@ -894,6 +969,51 @@ static void * seek_to_next_desc(PUSB_CONFIGURATION_DESCRIPTOR config, unsigned i
 	}while(1);
 }
 
+int proc_select_interface(PPDO_DEVICE_DATA pdodata,
+		struct _URB_SELECT_INTERFACE * req)
+{
+	unsigned int i;
+	USBD_INTERFACE_INFORMATION *intf= &req->Interface;
+
+	if(NULL==pdodata->dev_config){
+		KdPrint(("Warning, select interface when have no get config\n"));
+		return STATUS_INVALID_DEVICE_REQUEST;
+	}
+	KdPrint(("config handle:%d\n", req->ConfigurationHandle));
+	KdPrint(("interface: len:%d num:%d class:%d subclass:%d"
+		"protocol:%d handle:%d numerofpipes:%d",
+		req->Interface.Length,
+		req->Interface.InterfaceNumber,
+		req->Interface.Class,
+		req->Interface.SubClass,
+		req->Interface.Protocol,
+		req->Interface.InterfaceHandle,
+		req->Interface.NumberOfPipes));
+
+	for(i=0; i<intf->NumberOfPipes;i++){
+		KdPrint(("pipe %d:\n"
+		    "MaximumPacketSize: %d\n"
+		    "EndpointAddress: %d\n"
+		    "Interval: %d\n"
+		    "PipeType: %d\n"
+		    "PiPeHandle: %d\n"
+		    "MaximumTransferSize %d\n"
+		    "PipeFlags %d\n", i,
+		    intf->Pipes[i].MaximumPacketSize,
+		    intf->Pipes[i].EndpointAddress,
+		    intf->Pipes[i].Interval,
+		    intf->Pipes[i].PipeType,
+		    intf->Pipes[i].PipeHandle,
+		    intf->Pipes[i].MaximumTransferSize,
+		    intf->Pipes[i].PipeFlags));
+		if(intf->Pipes[i].MaximumTransferSize > 65536){
+			return STATUS_INVALID_PARAMETER;
+		}
+
+	}
+	return STATUS_SUCCESS;
+}
+
 int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		struct _URB_SELECT_CONFIGURATION * req)
 {
@@ -1015,6 +1135,9 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 		case URB_FUNCTION_SELECT_CONFIGURATION:
 			KdPrint(("select configuration\n"));
 			return proc_select_config(pdodata, arg);
+		case URB_FUNCTION_SELECT_INTERFACE:
+			KdPrint(("select interface\n"));
+			return proc_select_interface(pdodata, arg);
 		case URB_FUNCTION_CLASS_INTERFACE:
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
@@ -1114,7 +1237,16 @@ Bus_Internal_IoCtl (
     KdPrint(("internal control:%d %s\r\n", irpStack->Parameters.DeviceIoControl.IoControlCode,code2name(irpStack->Parameters.DeviceIoControl.IoControlCode)));
     switch(irpStack->Parameters.DeviceIoControl.IoControlCode){
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
-		    status=proc_urb(pdoData, irpStack->Parameters.Others.Argument1);
+		    status=proc_urb(pdoData,
+				    irpStack->Parameters.Others.Argument1);
+		    break;
+	case IOCTL_INTERNAL_USB_GET_PORT_STATUS:
+		    status=STATUS_SUCCESS;
+		    *(unsigned long *)irpStack->Parameters.Others.Argument1=
+			    USBD_PORT_ENABLED|USBD_PORT_CONNECTED;
+		    break;
+	case IOCTL_INTERNAL_USB_RESET_PORT:
+		    status=STATUS_PENDING;
 		    break;
 	default:
 		    KdPrint(("Unknown Ioctrl code\n"));

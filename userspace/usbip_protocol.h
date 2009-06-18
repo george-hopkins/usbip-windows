@@ -213,6 +213,7 @@ struct usbip_header_basic {
 #define USBIP_CMD_UNLINK	0x0002
 #define USBIP_RET_SUBMIT	0x0003
 #define USBIP_RET_UNLINK	0x0004
+#define USBIP_RESET_DEV		0xFFFF
 	unsigned int command;
 
 	 /* sequencial number which identifies requests.

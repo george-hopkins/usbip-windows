@@ -213,7 +213,6 @@ static int import_device(int sockfd, struct usb_device *udev,
 		return -1;
 	}
 
-	
 	info("call from attch here\n");
 	ret = usbip_vbus_attach_device(fd, port, udev, uinf0);
 	info("return from attch here\n");
