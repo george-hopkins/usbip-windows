@@ -257,7 +257,8 @@ Routine Description:
         // Query the IDs of the device
 
         Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
-                ("\tQueryId Type: %s\n",
+                ("\tQueryId Type: %d %s\n",
+		 IrpStack->Parameters.QueryId.IdType,
                 DbgDeviceIDString(IrpStack->Parameters.QueryId.IdType)));
 
         status = Bus_PDO_QueryDeviceId(DeviceData, Irp);
@@ -679,38 +680,18 @@ Return Value:
 
     case BusQueryHardwareIDs:
 
-        //
-        // A device has at least one hardware id.
-        // In a list of hardware IDs (multi_sz string) for a device,
-        // DeviceId is the most specific and should be first in the list.
-        //
+	#define HARDWARE_IDS_SAMPLE L"USB\\Vid_1234&Pid_1234&Rev_1234\0USB\\Vid_1234&Pid_1234\0"
 
-        buffer = DeviceData->HardwareIDs;
-
-        while (*(buffer++)) {
-            while (*(buffer++)) {
-                ;
-            }
-        }
-
-        status = RtlULongPtrSub((ULONG_PTR)buffer, (ULONG_PTR)DeviceData->HardwareIDs, &result);
-        if (!NT_SUCCESS(status)) {
-           break;
-        }
-
-        length = (ULONG)result;
-
+        length = sizeof(HARDWARE_IDS_SAMPLE);
         buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
         if (!buffer) {
            status = STATUS_INSUFFICIENT_RESOURCES;
            break;
         }
-
         RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
 	KdPrint(("hid:%LS\r\n", buffer));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
         break;
-
 
     case BusQueryCompatibleIDs:
 

@@ -10,6 +10,7 @@ one usb mouse
 two usb flash disk
 (one disk only work with user space usbipd daemon, it need reset device function)
 one hid device compatible usb secure key
+one dlink DWL-G122 usb wireless card
 
 To build userspace usbip tool:
 

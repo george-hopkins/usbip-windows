@@ -337,6 +337,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		type=USB_ENDPOINT_TYPE_CONTROL;
 		break;
 	case URB_FUNCTION_CLASS_INTERFACE:
+	case URB_FUNCTION_VENDOR_DEVICE:
 		in=urb->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
 		type=USB_ENDPOINT_TYPE_CONTROL;
 		break;
@@ -518,6 +519,45 @@ int prepare_reset_dev(char *buf, int len,  int *copied, unsigned long seqnum,
 		0, 0);
 	h->base.command = RtlUlongByteSwap(USBIP_RESET_DEV);
 	*copied=sizeof(*h);
+	return  STATUS_SUCCESS;
+}
+
+int prepare_vendor_device_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
+		char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	int in=req->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
+	*copied = 0;
+
+	KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
+		"Request:%02x Value:%02x Index:%02x\r\n",
+		req->TransferFlags, req->TransferBuffer,
+		req->TransferBufferLength,
+		req->RequestTypeReservedBits, req->Request,
+		req->Value, req->Index));
+
+	CHECK_SIZE_RW
+
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		in, 0,
+		req->TransferFlags|USBD_SHORT_TRANSFER_OK, req->TransferBufferLength);
+	build_setup_packet(setup,
+	in,
+	BMREQUEST_VENDOR, BMREQUEST_TO_DEVICE, req->Request);
+//FIXME what is the usage of RequestTypeReservedBits?
+	setup->wLength = req->TransferBufferLength;
+	setup->wValue = req->Value;
+	setup->wIndex = req->Index;
+
+	*copied=sizeof(*h);
+	if(!in){
+		RtlCopyMemory(h+1, req->TransferBuffer,
+				req->TransferBufferLength);
+		(*copied)+=req->TransferBufferLength;
+	}
 	return  STATUS_SUCCESS;
 }
 
@@ -706,7 +746,9 @@ int set_read_irp_data(PIRP read_irp, PIRP ioctl_irp, unsigned long seq_num,
 		case URB_FUNCTION_CLASS_INTERFACE:
 			return prepare_class_interface_urb((struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST *)urb, buf, len,
 			&read_irp->IoStatus.Information, seq_num, devid);
-
+		case URB_FUNCTION_VENDOR_DEVICE:
+			return prepare_vendor_device_urb((struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST *)urb, buf, len,
+			&read_irp->IoStatus.Information, seq_num, devid);
 		default:
 			break;
      }
@@ -1075,14 +1117,14 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		intf->InterfaceHandle = (USBD_INTERFACE_HANDLE) 0x12345678;
 		for(j=0; j<intf->NumberOfPipes;j++){
 			KdPrint(("pipe %d:\n"
-			    "MaximumTransferSize: %d\n"
+			    "MaximumPacketSize: %d\n"
 			    "EndpointAddress: %d\n"
 			    "Interval: %d\n"
 			    "PipeType: %d\n"
 			    "PiPeHandle: %d\n"
 			    "MaximumTransferSize %d\n"
-			    "PipeFlags %d\n", i,
-			    intf->Pipes[j].MaximumTransferSize,
+			    "PipeFlags %d\n", j,
+			    intf->Pipes[j].MaximumPacketSize,
 			    intf->Pipes[j].EndpointAddress,
 			    intf->Pipes[j].Interval,
 			    intf->Pipes[j].PipeType,
@@ -1098,6 +1140,7 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 				KdPrint(("Warning, no ep desc\n"));
 				return STATUS_INVALID_DEVICE_REQUEST;
 			}
+			intf->Pipes[j].MaximumPacketSize = ep_desc->wMaxPacketSize;
 			intf->Pipes[j].EndpointAddress = ep_desc->bEndpointAddress;
 			intf->Pipes[j].Interval = ep_desc->bInterval;
 			/* FIXME */
@@ -1106,14 +1149,14 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 			intf->Pipes[j].PipeHandle=(USBD_PIPE_HANDLE)
 				ep_desc->bEndpointAddress;
 			KdPrint(("pipe %d:\n"
-			    "MaximumTransferSize: %d\n"
+			    "MaximumPacketSize: %d\n"
 			    "EndpointAddress: %d\n"
 			    "Interval: %d\n"
 			    "PipeType: %d\n"
 			    "PiPeHandle: %d\n"
 			    "MaximumTransferSize %d\n"
-			    "PipeFlags %d\n", i,
-			    intf->Pipes[j].MaximumTransferSize,
+			    "PipeFlags %d\n", j,
+			    intf->Pipes[j].MaximumPacketSize,
 			    intf->Pipes[j].EndpointAddress,
 			    intf->Pipes[j].Interval,
 			    intf->Pipes[j].PipeType,
@@ -1144,6 +1187,7 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 			KdPrint(("select interface\n"));
 			return proc_select_interface(pdodata, arg);
 		case URB_FUNCTION_CLASS_INTERFACE:
+		case URB_FUNCTION_VENDOR_DEVICE:
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
 		case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
