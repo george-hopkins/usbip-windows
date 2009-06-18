@@ -339,7 +339,10 @@ DWORD WINAPI sock_thread(LPVOID p)
 			ret=recv(fdi->sock, buf+sizeof(u),
 				u.u.ret_submit.actual_length,0);
 			if(ret!=u.u.ret_submit.actual_length){
-				err("recv from sock failed\n");
+				err("recv from sock failed %d %d\n",
+						ret,
+						u.u.ret_submit.actual_length,
+						);
 				free(buf);
 				break;
 			}

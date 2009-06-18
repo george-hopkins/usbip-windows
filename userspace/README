@@ -1,5 +1,16 @@
 It is just a proof of concept now.
 
+It should work with single interface device with bulk and interrupt endpoints.
+It can't work with usb device with iso endpoints, most usb audio cards and 
+usb webcams are such device.
+
+USB devices I have tested ok for me:
+
+one usb mouse
+two usb flash disk
+(one disk only work with user space usbipd daemon, it need reset device function)
+one hid device compatible usb secure key
+
 To build userspace usbip tool:
 
 On a linux host:
@@ -33,8 +44,6 @@ it won't crash your pc when this stuff BSOD.
 run usbip -l xxx.xxx.xxx.xxx to show the exported usb device from linux
 run usbip -a xxx.xxx.xxx.xxx x-x to use it.
 run usbip -d 0 to detach all usb device
-
-You can only test usb mouse now. (This should change and improve quickly)
 
 About LICENSE:
 

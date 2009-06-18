@@ -247,6 +247,7 @@ void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_RE
 
 #define EPIPE 32
 #define EOVERFLOW 75
+#define EREMOTEIO 121
 
 unsigned int tran_usb_status(int linux_status,int in, int type)
 {
@@ -260,6 +261,8 @@ unsigned int tran_usb_status(int linux_status,int in, int type)
 			return USBD_STATUS_ENDPOINT_HALTED;
 		case -EOVERFLOW:
 			return USBD_STATUS_DATA_OVERRUN;
+		case -EREMOTEIO:
+			return USBD_STATUS_ERROR_SHORT_TRANSFER;
 		default:
 			return USBD_STATUS_ERROR;
 	}
@@ -527,20 +530,19 @@ int prepare_class_interface_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *re
 	int in=req->TransferFlags & USBD_TRANSFER_DIRECTION_IN;
 	*copied = 0;
 
-	CHECK_SIZE_RW
-
-	if(req->RequestTypeReservedBits!=0x22){
-		KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
+	KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
 		"Request:%02x Value:%02x Index:%02x\r\n",
 		req->TransferFlags, req->TransferBuffer,
 		req->TransferBufferLength,
 		req->RequestTypeReservedBits, req->Request,
 		req->Value, req->Index));
-	}
+
+	CHECK_SIZE_RW
+
 	set_cmd_submit_usbip_header (h,
 		seqnum, devid,
 		in, 0,
-		req->TransferFlags, req->TransferBufferLength);
+		req->TransferFlags|USBD_SHORT_TRANSFER_OK, req->TransferBufferLength);
 	build_setup_packet(setup,
 	in,
 	BMREQUEST_CLASS, BMREQUEST_TO_INTERFACE, req->Request);
@@ -1037,17 +1039,20 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 	req->ConfigurationHandle=(USBD_CONFIGURATION_HANDLE) 0x12345678;
 	intf = &req->Interface;
 	for(i=0; i<req->ConfigurationDescriptor->bNumInterfaces; i++){
-		if((char *)intf + sizeof(*intf) - (char *)req
+		if((char *)intf + sizeof(*intf) - sizeof(intf->Pipes[0])
+				- (char *)req
 				>req->Hdr.Length){
 			KdPrint(("Warning, too small urb for select config\n"));
 			return STATUS_INVALID_PARAMETER;
 		}
-		if((char *)intf + sizeof(*intf) +
+		if(intf->NumberOfPipes>0){
+			if((char *)intf + sizeof(*intf) +
 				(intf->NumberOfPipes-1)*sizeof(intf->Pipes[0])
 				- (char *)req
 				> req->Hdr.Length){
-			KdPrint(("Warning, too small urb for select config\n"));
-			return STATUS_INVALID_PARAMETER;
+				KdPrint(("Warning, too small urb for select config\n"));
+				return STATUS_INVALID_PARAMETER;
+			}
 		}
 		intf_desc = seek_to_next_desc(
 				pdodata->dev_config,
