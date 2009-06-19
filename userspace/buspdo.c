@@ -25,9 +25,7 @@ Revision History:
 --*/
 
 #include "busenum.h"
-
-#define VENDORNAME L"Microsoft_"
-#define MODEL       L"Eliyas_Toaster_"
+#include <wdmguid.h>
 
 
 #ifdef ALLOC_PRAGMA
@@ -293,6 +291,7 @@ Routine Description:
 
         break;
 
+
     case IRP_MN_QUERY_BUS_INFORMATION:
 
         status = Bus_PDO_QueryBusInformation(DeviceData, Irp);
@@ -527,7 +526,7 @@ Return Value:
 
     // Ejection supported
 
-    deviceCapabilities->EjectSupported = TRUE;
+    deviceCapabilities->EjectSupported = FALSE;
 
     //
     // This flag specifies whether the device's hardware is disabled.
@@ -630,33 +629,17 @@ Return Value:
         // This can be the same as the hardware ids (which requires a multi
         // sz).
         //
+	#define DEVICEE_ID_SAMPLE L"USB\\Vid_1234&Pid_1234"
 
-        buffer = DeviceData->HardwareIDs;
-
-        while (*(buffer++)) {
-            while (*(buffer++)) {
-                ;
-            }
-        }
-	KdPrint(("buffer:%p, hardwareids:%p\n", buffer, DeviceData->HardwareIDs));
-
-        status = RtlULongPtrSub((ULONG_PTR)buffer, (ULONG_PTR)DeviceData->HardwareIDs, &result);
-        if (!NT_SUCCESS(status)) {
-           break;
-        }
-
-
-        length = (ULONG)result;
-	KdPrint(("device id len:%d\n", length));
-
+	length = sizeof(DEVICEE_ID_SAMPLE);
         buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
-
         if (!buffer) {
            status = STATUS_INSUFFICIENT_RESOURCES;
            break;
         }
-
         RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
+	*(unsigned short *)((char *)buffer+length -2)=0;
+	KdPrint(("dev id:%LS\r\n", buffer));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
         break;
 
@@ -775,8 +758,7 @@ Return Value:
         case 0x00000409 : // English
             if (!Irp->IoStatus.Information) {
                 // 10 for number of digits in the serial number
-                length  = (USHORT) \
-                (wcslen(VENDORNAME) + 1 + wcslen(MODEL) + 1 + 10) * sizeof(WCHAR);
+                length  = 100;
                 buffer = ExAllocatePoolWithTag (PagedPool,
                                             length, BUSENUM_POOL_TAG);
                 if (buffer == NULL ) {
@@ -784,8 +766,12 @@ Return Value:
                     break;
                 }
 
+#if 0
                 RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"%ws%ws%02d", VENDORNAME, MODEL,
                                             DeviceData->SerialNo);
+#endif
+                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"USB Token");
+
                 Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
                     ("\tDeviceTextDescription :%ws\n", buffer));
 
@@ -797,12 +783,32 @@ Return Value:
         break;
 
     case DeviceTextLocationInformation:
+           if (!Irp->IoStatus.Information) {
+                // 10 for number of digits in the serial number
+                length  = 100;
+                buffer = ExAllocatePoolWithTag (PagedPool,
+                                            length, BUSENUM_POOL_TAG);
+                if (buffer == NULL ) {
+                    status = STATUS_INSUFFICIENT_RESOURCES;
+                    break;
+                }
 
-        Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
-            ("\tDeviceTextLocationInformation: Unknown\n"));
+                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"China");
+
+                Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
+                    ("\tDeviceTextDescription :%ws\n", buffer));
+
+                Irp->IoStatus.Information = (ULONG_PTR) buffer;
+            }
+            status = STATUS_SUCCESS;
+	break;
 
     default:
-        status = Irp->IoStatus.Status;
+        Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
+            ("\tWarning Query what? %d\n",
+		stack->Parameters.QueryDeviceText.DeviceTextType));
+
+        status = STATUS_SUCCESS;
         break;
     }
 
@@ -1120,7 +1126,7 @@ Return Value:
       return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    busInfo->BusTypeGuid = GUID_DEVCLASS_TOASTER;
+    busInfo->BusTypeGuid = GUID_BUS_TYPE_USB;
 
     //
     // Some buses have a specific INTERFACE_TYPE value,
@@ -1135,7 +1141,7 @@ Return Value:
     // This is an hypothetical bus
     //
 
-    busInfo->BusNumber = 0;
+    busInfo->BusNumber = 10;
 
     Irp->IoStatus.Information = (ULONG_PTR)busInfo;
 

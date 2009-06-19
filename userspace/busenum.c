@@ -345,6 +345,10 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		in=handle2ep(urb->PipeHandle) & 0x80;
 		type=USB_ENDPOINT_TYPE_BULK;
 		break;
+	case URB_FUNCTION_SELECT_CONFIGURATION:
+		in=0;
+		type=USB_ENDPOINT_TYPE_CONTROL;
+		break;
 	defualt:
 		KdPrint(("Warning, not supported func:%d\n",
 					urb->Hdr.Function));
@@ -518,6 +522,32 @@ int prepare_reset_dev(char *buf, int len,  int *copied, unsigned long seqnum,
 		0, 0,
 		0, 0);
 	h->base.command = RtlUlongByteSwap(USBIP_RESET_DEV);
+	*copied=sizeof(*h);
+	return  STATUS_SUCCESS;
+}
+
+int prepare_select_config_urb(struct _URB_SELECT_CONFIGURATION  *req,
+		char *buf, int len,  int *copied, unsigned long seqnum,
+		unsigned int devid)
+{
+	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	int in=0;
+	*copied = 0;
+
+	CHECK_SIZE_READ
+
+	set_cmd_submit_usbip_header (h,
+		seqnum, devid,
+		0, 0,
+		0, 0);
+	build_setup_packet(setup,
+	0,
+	BMREQUEST_STANDARD, BMREQUEST_TO_DEVICE, USB_REQUEST_SET_CONFIGURATION);
+	setup->wLength = 0;
+	setup->wValue = 1;
+	setup->wIndex = 0;
+
 	*copied=sizeof(*h);
 	return  STATUS_SUCCESS;
 }
@@ -748,6 +778,9 @@ int set_read_irp_data(PIRP read_irp, PIRP ioctl_irp, unsigned long seq_num,
 			&read_irp->IoStatus.Information, seq_num, devid);
 		case URB_FUNCTION_VENDOR_DEVICE:
 			return prepare_vendor_device_urb((struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST *)urb, buf, len,
+			&read_irp->IoStatus.Information, seq_num, devid);
+		case URB_FUNCTION_SELECT_CONFIGURATION:
+			return prepare_select_config_urb((struct _URB_SELECT_CONFIGURATION *)urb, buf, len,
 			&read_irp->IoStatus.Information, seq_num, devid);
 		default:
 			break;
@@ -1167,7 +1200,8 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
 			sizeof(intf->Pipes[0]);
 	}
-	return STATUS_SUCCESS;
+	/* we need to send a set config urb out */
+	return STATUS_PENDING;
 }
 
 int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
