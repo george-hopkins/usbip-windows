@@ -7,18 +7,7 @@
 
 DEFINE_GUID (GUID_DEVINTERFACE_BUSENUM_TOASTER,
         0xD35F7840, 0x6A0C, 0x11d2, 0xB8, 0x41, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
-//  {D35F7840-6A0C-11d2-B841-00C04FAD5171}
-  
-//
-// Define an Interface Guid for toaster device class.
-// This GUID is used to register (IoRegisterDeviceInterface) 
-// an instance of an interface so that user application 
-// can control the toaster device.
-//
 
-DEFINE_GUID (GUID_DEVINTERFACE_TOASTER, 
-        0x781EF630, 0x72B2, 0x11d2, 0xB8, 0x52, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
-//{781EF630-72B2-11d2-B852-00C04FAD5171}
 
 //
 // Define a Setup Class GUID for Toaster Class. This is same

@@ -270,6 +270,7 @@ typedef struct _PDO_DEVICE_DATA
     unsigned int devid;
     unsigned long seq_num;
     char * dev_config;
+    UNICODE_STRING  usb_dev_interface;
 
     //
     // In order to reduce the complexity of the driver, I chose not

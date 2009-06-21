@@ -26,6 +26,7 @@ Revision History:
 
 #include "busenum.h"
 #include <wdmguid.h>
+#include <usbdi.h>
 
 
 #ifdef ALLOC_PRAGMA
@@ -77,7 +78,13 @@ Routine Description:
         //
         DeviceData->DevicePowerState = PowerDeviceD0;
         SET_NEW_PNP_STATE(DeviceData, Started);
-        status = STATUS_SUCCESS;
+	status = IoRegisterDeviceInterface (
+                DeviceObject,
+                &GUID_DEVINTERFACE_USB_DEVICE,
+                NULL,
+                &DeviceData->usb_dev_interface);
+	if(status==STATUS_SUCCESS)
+		IoSetDeviceInterfaceState(&DeviceData->usb_dev_interface, TRUE);
         break;
 
     case IRP_MN_STOP_DEVICE:
@@ -87,7 +94,9 @@ Routine Description:
         // we acquired for the device.
         //
 
+
         SET_NEW_PNP_STATE(DeviceData, Stopped);
+	IoSetDeviceInterfaceState(&DeviceData->usb_dev_interface, FALSE);
         status = STATUS_SUCCESS;
         break;
 
