@@ -710,6 +710,7 @@ int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
 
 	CHECK_SIZE_RW
 
+	KdPrint(("PipeHandle %d\n", (unsigned long)req->PipeHandle));
 	set_cmd_submit_usbip_header (h,
 		seqnum, devid,
 		in,
@@ -1200,8 +1201,8 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
 			sizeof(intf->Pipes[0]);
 	}
-	/* we need to send a set config urb out */
-	return STATUS_PENDING;
+	/* it seems we must return now */
+	return STATUS_SUCCESS;
 }
 
 int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
