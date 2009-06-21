@@ -311,7 +311,7 @@ DWORD WINAPI sock_thread(LPVOID p)
 	ov.hEvent=ev;
 
 	do {
-		ret=recv(fdi->sock, (char *)&u, sizeof(u), 0);
+		ret=usbip_recv(fdi->sock, (char *)&u, sizeof(u));
 		if(ret!=sizeof(u)){
 			err("strange recv %d\n",ret);
 			break;
@@ -336,13 +336,12 @@ DWORD WINAPI sock_thread(LPVOID p)
 		}
 		memcpy(buf, &u, sizeof(u));
 		if(u.u.ret_submit.actual_length){
-			ret=recv(fdi->sock, buf+sizeof(u),
-				u.u.ret_submit.actual_length,0);
+			ret=usbip_recv(fdi->sock, buf+sizeof(u),
+				u.u.ret_submit.actual_length);
 			if(ret!=u.u.ret_submit.actual_length){
 				err("recv from sock failed %d %d\n",
 						ret,
-						u.u.ret_submit.actual_length,
-						);
+						u.u.ret_submit.actual_length);
 				free(buf);
 				break;
 			}
@@ -405,7 +404,7 @@ DWORD WINAPI dev_thread(LPVOID p)
 			err("out q full");
 			break;
 		}
-		ret=send(fdi->sock, big_buf, len, 0);
+		ret=usbip_send(fdi->sock, big_buf, len);
 		if(ret!=len){
 			err("send sock len:%ld, ret:%d\n", len, ret);
 			break;

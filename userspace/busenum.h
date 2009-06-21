@@ -450,7 +450,7 @@ bus_get_ports_status (
 
 NTSTATUS
 bus_unplug_dev (
-    ioctl_usbvbus_unplug * unplug,
+    int addr,
     PFDO_DEVICE_DATA            DeviceData
     );
 

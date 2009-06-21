@@ -1325,7 +1325,7 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 
 NTSTATUS
 bus_unplug_dev (
-    ioctl_usbvbus_unplug * unplug,
+    int addr,
     PFDO_DEVICE_DATA            fdodata
     )
 {
@@ -1335,10 +1335,10 @@ bus_unplug_dev (
 
     PAGED_CODE ();
 
-    if(unplug->addr<0)
+    if(addr<0||addr>127)
 	return STATUS_INVALID_PARAMETER;
 
-    all = (0 == unplug->addr);
+    all = (0 == addr);
 
     ExAcquireFastMutex (&fdodata->Mutex);
 
@@ -1347,7 +1347,7 @@ bus_unplug_dev (
                       ("Plugging out all the devices!\n"));
     } else {
         Bus_KdPrint (fdodata, BUS_DBG_IOCTL_NOISE,
-                      ("Plugging out %d\n", unplug->addr));
+                      ("Plugging out %d\n", addr));
     }
 
     if (fdodata->NumPDOs == 0) {
@@ -1369,7 +1369,7 @@ bus_unplug_dev (
         Bus_KdPrint (fdodata, BUS_DBG_IOCTL_NOISE,
                       ("found device %d\n", pdodata->SerialNo));
 
-        if (all || unplug->addr == pdodata->SerialNo) {
+        if (all || addr == pdodata->SerialNo) {
             Bus_KdPrint (fdodata, BUS_DBG_IOCTL_INFO,
                           ("Plugged out %d\n", pdodata->SerialNo));
             pdodata->Present = FALSE;
@@ -1389,7 +1389,7 @@ bus_unplug_dev (
     }
 
     Bus_KdPrint (fdodata, BUS_DBG_IOCTL_ERROR,
-                  ("Device %d is not present\n", unplug->addr));
+                  ("Device %d is not present\n", addr));
 
     return STATUS_INVALID_PARAMETER;
 }

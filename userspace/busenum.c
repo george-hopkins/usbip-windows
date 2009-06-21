@@ -971,6 +971,7 @@ Bus_Cleanup (
     if(pdodata){
 	    pdodata->fo=NULL;
 	    irpstack->FileObject->FsContext=NULL;
+	    bus_unplug_dev(pdodata->SerialNo, fdodata);
     }
     status = STATUS_SUCCESS;
     irp->IoStatus.Information = 0;
@@ -1440,8 +1441,7 @@ Return Value:
 
             Bus_KdPrint(fdoData, BUS_DBG_IOCTL_TRACE, ("UnPlug called\n"));
 
-            status= bus_unplug_dev(
-                    (ioctl_usbvbus_unplug *)buffer, fdoData);
+            status= bus_unplug_dev(((ioctl_usbvbus_unplug *)buffer)->addr, fdoData);
 
         }
         break;
