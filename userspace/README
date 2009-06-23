@@ -1,15 +1,16 @@
-It is just a proof of concept now.
+Because I haven't implemented all the interfaces that a windows usb bus
+driver should provided, so some devices won't work now.
 
-It should work with single interface device with bulk and interrupt endpoints.
-It can't work with usb device with iso endpoints, most usb audio cards and 
-usb webcams are such device.
+Devices with  bulk and interrupt endpoints have the possibility to work.
+
+Devices with isochronous endpoints (most usb audio cards and usb webcams are such device) can't work now.
 
 USB devices I have tested ok for me:
 
 one usb mouse
 two usb flash disk
 (one disk only work with user space usbipd daemon, it need reset device function)
-two hid device compatible usb secure key
+two hid device compatible usb token key
 one dlink DWL-G122 usb wireless card
 usb camera on asus eeepc 701 model
 
@@ -19,9 +20,11 @@ On a linux host:
 
 1. install mingw32
 
-For debian based linux distribution, run apt-get install mingw32
+For debian based linux distribution, run like this;
 
-2. run make in this directory
+apt-get install mingw32
+
+2. run "make" in this directory
 
 
 To build kernel driver:
@@ -33,7 +36,7 @@ On a windows host:
    I download version 6001.18002 from MSDN site. I think the other
 version perhaps will be ok too.
 
-2. enter windows xp build env, and run i.bat in this directroy to
+2. enter windows xp build env, and run b.bat in this directroy to
 build and install the kernel driver. 
 
    you need devcon (from windows DDK sample) to install it.
@@ -43,9 +46,12 @@ To test:
 You'd better test the kernel driver in a virtual windows guest. Then
 it won't crash your pc when this stuff BSOD.
 
-run usbip -l xxx.xxx.xxx.xxx to show the exported usb device from linux
-run usbip -a xxx.xxx.xxx.xxx x-x to use it.
-run usbip -d 0 to detach all usb device
+To show the exported usb device from linux
+c:\wxp>usbip -l xxx.xxx.xxx.xxx 
+To attach it
+c:\wxp>usbip -a xxx.xxx.xxx.xxx x-x to use it.
+To detach it (open another cmd window)
+c:\wxp>usbip -d 1
 
 About LICENSE:
 
@@ -56,3 +62,5 @@ there is some MS license stuff at the beginning of every driver file.
 But I think I will change/rewrite the driver codes heavyly and at last I will
 make the driver compiled with mingw32, then I will delete all of the MS license 
 stuff.
+
+Any question, pleas contact me with address Lepton Wu <ytht.net@gmail.com>
