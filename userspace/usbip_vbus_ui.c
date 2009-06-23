@@ -158,15 +158,15 @@ int usbip_vbus_attach_device(HANDLE fd, int port, struct usb_device *udev,
 	plugin.vendor = udev->idVendor;
 	plugin.product = udev->idProduct;
 	plugin.version = udev->bcdDevice;
+	plugin.speed = udev->speed;
+	plugin.inum = udev->bNumInterfaces;
 	plugin.int0_class = uinf0->bInterfaceClass;
 	plugin.int0_subclass = uinf0->bInterfaceSubClass;
 	plugin.int0_protocol = uinf0->bInterfaceProtocol;
 	plugin.addr = port;
 
-	info("call me\n");
 	ret = DeviceIoControl(fd, IOCTL_USBVBUS_PLUGIN_HARDWARE,
 				&plugin, sizeof(plugin), NULL, 0, &unused, NULL);
-	info("finishied attach\n");
 	if(ret)
 		return 0;
 	return -1;

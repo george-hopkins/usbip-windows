@@ -11,6 +11,7 @@ two usb flash disk
 (one disk only work with user space usbipd daemon, it need reset device function)
 two hid device compatible usb secure key
 one dlink DWL-G122 usb wireless card
+usb camera on asus eeepc 701 model
 
 To build userspace usbip tool:
 

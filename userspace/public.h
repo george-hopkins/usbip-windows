@@ -14,7 +14,7 @@ DEFINE_GUID (GUID_DEVINTERFACE_BUSENUM_TOASTER,
 // as the TOASTSER CLASS guid in the INF files.
 //
 
-DEFINE_GUID (GUID_DEVCLASS_TOASTER, 
+DEFINE_GUID (GUID_DEVCLASS_TOASTER,
         0xB85B7C50, 0x6A01, 0x11d2, 0xB8, 0x41, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
 //{B85B7C50-6A01-11d2-B841-00C04FAD5171}
 
@@ -70,12 +70,14 @@ typedef struct _ioctl_usbvbus_plugin
 	unsigned short product;
 	/* 8 bytes */
 	unsigned short version;
+	unsigned char speed;
+	unsigned char inum;
+	/* 12 bytes */
 	unsigned char int0_class;
 	unsigned char int0_subclass;
-	/* 12 bytes */
 	unsigned char int0_protocol;
 	signed char addr;  /* then it can not be bigger then 127 */
-	/* 14 bytes */
+	/* 16 bytes */
 } ioctl_usbvbus_plugin;
 
 typedef struct _ioctl_usbvbus_get_ports_status

@@ -27,7 +27,7 @@ Revision History:
 #include "busenum.h"
 #include <wdmguid.h>
 #include <usbdi.h>
-
+#include <usbbusif.h>
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (PAGE, Bus_PDO_PnP)
@@ -146,7 +146,7 @@ Routine Description:
         // If not fail this request. This is the last opportunity
         // to do so.
         //
-        if (DeviceData->ToasterInterfaceRefCount){
+        if (DeviceData->InterfaceRefCount){
             //
             // Somebody is still using our interface.
             // We must fail remove.
@@ -691,13 +691,14 @@ Return Value:
         // The generic ids for installation of this pdo.
         //
 
-        length = BUSENUM_COMPATIBLE_IDS_LENGTH;
-        buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
+        buffer = ExAllocatePoolWithTag (PagedPool, DeviceData->compatible_ids_len,
+				BUSENUM_POOL_TAG);
         if (!buffer) {
            status = STATUS_INSUFFICIENT_RESOURCES;
            break;
         }
-        RtlCopyMemory (buffer, DeviceData->compatible_ids, length);
+        RtlCopyMemory (buffer, DeviceData->compatible_ids,
+			DeviceData->compatible_ids_len);
 	KdPrint(("cid:%LS\r\n", buffer));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
         break;
@@ -767,7 +768,7 @@ Return Value:
         case 0x00000409 : // English
             if (!Irp->IoStatus.Information) {
                 // 10 for number of digits in the serial number
-                length  = 100;
+                length  = 256;
                 buffer = ExAllocatePoolWithTag (PagedPool,
                                             length, BUSENUM_POOL_TAG);
                 if (buffer == NULL ) {
@@ -779,7 +780,7 @@ Return Value:
                 RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"%ws%ws%02d", VENDORNAME, MODEL,
                                             DeviceData->SerialNo);
 #endif
-                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"USB Token");
+                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"USB Device Over IP");
 
                 Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
                     ("\tDeviceTextDescription :%ws\n", buffer));
@@ -1157,72 +1158,123 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
+enum usb_device_speed {
+	USB_SPEED_UNKNOWN = 0,                  /* enumerating */
+	USB_SPEED_LOW, USB_SPEED_FULL,          /* usb 1.1 */
+	USB_SPEED_HIGH,                         /* usb 2.0 */
+	USB_SPEED_VARIABLE                      /* wireless (usb 2.5) */
+};
+
+BOOLEAN USB_BUSIFFN IsDeviceHighSpeed(PVOID context){
+	PPDO_DEVICE_DATA pdodata = context;
+	KdPrint(("IsDeviceHighSpeed called, it is %d\n", pdodata->speed));
+	if(pdodata->speed == USB_SPEED_HIGH)
+		return TRUE;
+	return FALSE;
+}
+
+NTSTATUS USB_BUSIFFN QueryBusInformation(
+    IN PVOID BusContext,
+    IN ULONG Level,
+    IN OUT PVOID BusInformationBuffer,
+    IN OUT PULONG BusInformationBufferLength,
+    OUT PULONG BusInformationActualLength
+    ){
+	KdPrint(("QueryBusInformation called\n"));
+	return STATUS_UNSUCCESSFUL;
+}
+
+NTSTATUS USB_BUSIFFN SubmitIsoOutUrb (
+        IN PVOID context,
+        IN PURB urb
+){
+	KdPrint(("SubmitIsoOutUrb called\n"));
+	return STATUS_UNSUCCESSFUL;
+}
+
+NTSTATUS USB_BUSIFFN QueryBusTime(
+    IN PVOID context,
+    IN OUT PULONG currentusbframe
+)
+{
+	KdPrint(("QueryBusTime called\n"));
+	return STATUS_UNSUCCESSFUL;
+}
+
+VOID USB_BUSIFFN GetUSBDIVersion (
+        IN PVOID context,
+        IN OUT PUSBD_VERSION_INFORMATION inf,
+        IN OUT PULONG HcdCapabilities
+){
+	KdPrint(("GetUSBDIVersion called\n"));
+	*HcdCapabilities = 0;
+	inf->USBDI_Version=0x500; /* Windows XP */
+	inf->Supported_USB_Version=0x200; /* USB 2.0 */
+	return;
+}
+
 NTSTATUS
 Bus_PDO_QueryInterface(
     __in PPDO_DEVICE_DATA     DeviceData,
     __in  PIRP   Irp )
-/*++
-
-Routine Description:
-
-    This requests enables a driver to export proprietary interface
-    to other drivers. This function and the following 5 routines
-    are meant to show how a typical interface is exported.
-    Note: This and many other routines in this sample are not required if
-    someone is using this sample for just device enumeration purpose.
-Arguments:
-
-    DeviceData - Pointer to the PDO's device extension.
-    Irp          - Pointer to the irp.
-
-Return Value:
-
-    NT STATUS
-
---*/
 {
    PIO_STACK_LOCATION irpStack;
-   PTOASTER_INTERFACE_STANDARD toasterInterfaceStandard;
    GUID *interfaceType;
    NTSTATUS    status = STATUS_SUCCESS;
+   USB_BUS_INTERFACE_USBDI_V1 *bus_intf;
+   unsigned int valid_size[2]={
+	   sizeof(USB_BUS_INTERFACE_USBDI_V0),
+	   sizeof(USB_BUS_INTERFACE_USBDI_V1)
+   };
+   char buf[2048];
+   int i;
+   unsigned short size, version;
 
    PAGED_CODE();
 
    irpStack = IoGetCurrentIrpStackLocation(Irp);
    interfaceType = (GUID *) irpStack->Parameters.QueryInterface.InterfaceType;
-   if (IsEqualGUID(interfaceType, (PVOID) &GUID_TOASTER_INTERFACE_STANDARD)) {
-
-      if (irpStack->Parameters.QueryInterface.Size <
-                    sizeof(TOASTER_INTERFACE_STANDARD)
-                    && irpStack->Parameters.QueryInterface.Version != 1) {
-         return STATUS_INVALID_PARAMETER;
-      }
-
-      toasterInterfaceStandard = (PTOASTER_INTERFACE_STANDARD)
-                                irpStack->Parameters.QueryInterface.Interface;
-
-      toasterInterfaceStandard->Context = DeviceData;
-      //
-      // Fill in the exported functions
-      //
-      toasterInterfaceStandard->InterfaceReference   =
-                        (PINTERFACE_REFERENCE) Bus_InterfaceReference;
-      toasterInterfaceStandard->InterfaceDereference =
-                        (PINTERFACE_DEREFERENCE) Bus_InterfaceDereference;
-      toasterInterfaceStandard->GetCrispinessLevel   = Bus_GetCrispinessLevel;
-      toasterInterfaceStandard->SetCrispinessLevel   = Bus_SetCrispinessLevel;
-      toasterInterfaceStandard->IsSafetyLockEnabled = Bus_IsSafetyLockEnabled;
-
-      //
-      // Must take a reference before returning
-      //
-      Bus_InterfaceReference(DeviceData);
-   } else {
-        //
-        // Interface type not supported
-        //
-        status = Irp->IoStatus.Status;
+   for(i=0;i<sizeof(GUID);i++){
+		RtlStringCchPrintfA(buf+2*i, 3, "%02X", *((unsigned char *)interfaceType+i));
    }
+   KdPrint(("Query GUID: %s\n",buf));
+
+   if (!IsEqualGUID(interfaceType, (PVOID) &USB_BUS_INTERFACE_USBDI_GUID)){
+	KdPrint(("Query unknown interface GUID:"));
+        return Irp->IoStatus.Status;
+   }
+   size = irpStack->Parameters.QueryInterface.Size;
+   version = irpStack->Parameters.QueryInterface.Version;
+   if(version > USB_BUSIF_USBDI_VERSION_1){
+	KdPrint(("unsupported usbdi interface version now %d", version));
+        return STATUS_INVALID_PARAMETER;
+   }
+   if(size<valid_size[version]){
+	KdPrint(("unsupported usbdi interface version now %d", version));
+        return STATUS_INVALID_PARAMETER;
+   }
+
+   bus_intf = (USB_BUS_INTERFACE_USBDI_V1 *)
+	   irpStack->Parameters.QueryInterface.Interface;
+   bus_intf->Size = valid_size[version];
+   switch(version){
+	   case USB_BUSIF_USBDI_VERSION_1:
+		   bus_intf->IsDeviceHighSpeed = IsDeviceHighSpeed;
+		   /* passthrough */
+	   case USB_BUSIF_USBDI_VERSION_0:
+		   bus_intf->QueryBusInformation = QueryBusInformation;
+		   bus_intf->SubmitIsoOutUrb = SubmitIsoOutUrb;
+		   bus_intf->QueryBusTime = QueryBusTime;
+		   bus_intf->GetUSBDIVersion = GetUSBDIVersion;
+		   bus_intf->InterfaceReference   = InterfaceReference;
+		   bus_intf->InterfaceDereference = InterfaceDereference;
+		   bus_intf->BusContext = DeviceData;
+		   break;
+           default:
+		   KdPrint(("Error, never go here\n"));
+		   return STATUS_INVALID_PARAMETER;
+   }
+   InterfaceReference(DeviceData);
    return status;
 }
 
@@ -1312,7 +1364,7 @@ Return Value:
 }
 
 VOID
-Bus_InterfaceReference (
+InterfaceReference (
    __in PVOID Context
    )
 /*++
@@ -1330,11 +1382,11 @@ Return Value:
 
 --*/
 {
-    InterlockedIncrement(&((PPDO_DEVICE_DATA)Context)->ToasterInterfaceRefCount);
+    InterlockedIncrement(&((PPDO_DEVICE_DATA)Context)->InterfaceRefCount);
 }
 
 VOID
-Bus_InterfaceDereference (
+InterfaceDereference (
    __in PVOID Context
    )
 /*++
@@ -1352,7 +1404,7 @@ Return Value:
 
 --*/
 {
-    InterlockedDecrement(&((PPDO_DEVICE_DATA)Context)->ToasterInterfaceRefCount);
+    InterlockedDecrement(&((PPDO_DEVICE_DATA)Context)->InterfaceRefCount);
 }
 
 NTSTATUS

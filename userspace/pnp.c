@@ -1203,7 +1203,11 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
 		    pdodata->HardwareIDs[i]=0;
     }
 #define COMPATIBLE_IDS_TPL L"USB\\Class_%02x&SubClass_%02x&Prot_%02xZUSB\\Class_%02x&SubClass_%02xZUSB\\Class_%02xZ"
-    len = sizeof(COMPATIBLE_IDS_TPL);
+#define COMPATIBLE_COMPOSITE_IDS_TPL L"USB\\Class_%02x&SubClass_%02x&Prot_%02xZUSB\\Class_%02x&SubClass_%02xZUSB\\Class_%02xZUSB\\COMPOSITEZ"
+    if(plugin->inum>1)
+	   len = sizeof(COMPATIBLE_COMPOSITE_IDS_TPL);
+    else
+	   len = sizeof(COMPATIBLE_IDS_TPL);
     pdodata->compatible_ids =
             ExAllocatePoolWithTag (NonPagedPool, len, BUSENUM_POOL_TAG);
     RtlZeroMemory(pdodata->compatible_ids, len);
@@ -1212,8 +1216,9 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
         IoDeleteDevice(pdo);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    pdodata->compatible_ids_len = len;
     RtlStringCchPrintfW(pdodata->compatible_ids, len/sizeof(wchar_t),
-		COMPATIBLE_IDS_TPL,
+		(plugin->inum>1)?COMPATIBLE_COMPOSITE_IDS_TPL:COMPATIBLE_IDS_TPL,
 	        plugin->int0_class, plugin->int0_subclass, plugin->int0_protocol,
 		plugin->int0_class, plugin->int0_subclass,
 		plugin->int0_class);
@@ -1232,6 +1237,7 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
     pdodata->SerialNo = plugin->addr;
     pdodata->fo = fo;
     pdodata->devid = plugin->devid;
+    pdodata->speed = plugin->speed;
     bus_init_pdo (pdo, fdodata);
 
     //

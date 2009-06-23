@@ -217,8 +217,6 @@ struct usbip_header {
 	} u;
 };
 
-#define handle2ep(a) (((unsigned long)a)&0xff)
-
 void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_REQUEST *req)
 {
 	PUSB_CONFIGURATION_DESCRIPTOR cfg;
@@ -267,6 +265,35 @@ unsigned int tran_usb_status(int linux_status,int in, int type)
 			return USBD_STATUS_ERROR;
 	}
 	return USBD_STATUS_SUCCESS;
+}
+
+#define INLINE __inline
+
+static USBD_PIPE_HANDLE INLINE make_pipe(unsigned char ep,
+				unsigned char type,
+				unsigned char interval)
+{
+	return   (USBD_PIPE_HANDLE) (ep|(interval<<8)|(type<<16));
+}
+
+static unsigned char INLINE pipe2direct(USBD_PIPE_HANDLE handle)
+{
+	return ((unsigned long)handle & 0x80)?USBIP_DIR_IN:USBIP_DIR_OUT;
+}
+
+static unsigned char INLINE pipe2addr(USBD_PIPE_HANDLE handle)
+{
+	return (unsigned char)((unsigned long)handle & 0x7f);
+}
+
+static unsigned char INLINE pipe2type(USBD_PIPE_HANDLE handle)
+{
+	return (unsigned char)(((unsigned long)handle & 0xff0000)>>16);
+}
+
+static unsigned char INLINE pipe2interval(USBD_PIPE_HANDLE handle)
+{
+	return (unsigned char)(((unsigned long)handle & 0xff00)>>8);
 }
 
 int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
@@ -342,14 +369,14 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		type=USB_ENDPOINT_TYPE_CONTROL;
 		break;
 	case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
-		in=handle2ep(urb->PipeHandle) & 0x80;
+		in=pipe2direct(urb->PipeHandle);
 		type=USB_ENDPOINT_TYPE_BULK;
 		break;
 	case URB_FUNCTION_SELECT_CONFIGURATION:
 		in=0;
 		type=USB_ENDPOINT_TYPE_CONTROL;
 		break;
-	defualt:
+	default:
 		KdPrint(("Warning, not supported func:%d\n",
 					urb->Hdr.Function));
 		goto end;
@@ -366,8 +393,8 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 				urb->TransferBufferLength));
 	goto end;
     }
-    urb->TransferBufferLength = h->u.ret_submit.actual_length;
-    if(in && urb->TransferBufferLength){
+    len = h->u.ret_submit.actual_length;
+    if(in && len){
 	buf=NULL;
 	if(urb->TransferBuffer)
 		buf=urb->TransferBuffer;
@@ -381,13 +408,16 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		ioctl_status = STATUS_INSUFFICIENT_RESOURCES;
 		goto end;
 	}
-	RtlCopyMemory(buf, h+1, urb->TransferBufferLength);
+	RtlCopyMemory(buf, h+1, len);
 	if(NULL==pdodata->dev_config)
 		try_save_config(pdodata, urb);
     }
     urb->Hdr.Status = tran_usb_status(h->u.ret_submit.status, in, type);
-    KdPrint(("Sucess Finish URB FUNC:%d %s\n", urb->Hdr.Function,
-				func2name(urb->Hdr.Function)));
+    KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d\n", urb->Hdr.Function,
+				func2name(urb->Hdr.Function),
+				in?"in":"out", urb->TransferBufferLength,
+				len));
+    urb->TransferBufferLength = len;
     ioctl_status=STATUS_SUCCESS;
 end:
     ioctl_irp->IoStatus.Status = ioctl_status;
@@ -461,19 +491,19 @@ unsigned int transflag(unsigned int flags)
 
 void set_cmd_submit_usbip_header(struct usbip_header *h,
 		unsigned long seqnum, unsigned int devid,
-		unsigned int direct, unsigned int ep,
+		unsigned int direct, USBD_PIPE_HANDLE pipe,
 		unsigned int flags,  unsigned int len)
 {
 	h->base.command   = RtlUlongByteSwap(USBIP_CMD_SUBMIT);
 	h->base.seqnum    = RtlUlongByteSwap(seqnum);
         h->base.devid     = RtlUlongByteSwap(devid);
 	h->base.direction = RtlUlongByteSwap(direct?USBIP_DIR_IN:USBIP_DIR_OUT);
-	h->base.ep        = RtlUlongByteSwap(ep);
+	h->base.ep        = RtlUlongByteSwap(pipe2addr(pipe));
 	h->u.cmd_submit.transfer_flags = transflag(flags);
         h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
         h->u.cmd_submit.start_frame = 0;
         h->u.cmd_submit.number_of_packets = 0;
-        h->u.cmd_submit.interval = 0;
+        h->u.cmd_submit.interval = pipe2interval(pipe);
 }
 
 struct usb_ctrl_setup {
@@ -704,17 +734,22 @@ int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	int in = handle2ep(req->PipeHandle) & 0x80;
+	int in = pipe2direct(req->PipeHandle);
+	int type = pipe2type(req->PipeHandle);
 
 	*copied = 0;
 
 	CHECK_SIZE_RW
 
-	KdPrint(("PipeHandle %d\n", (unsigned long)req->PipeHandle));
+
+	KdPrint(("PipeHandle %08x\n", (unsigned long)req->PipeHandle));
+	if(type!=USB_ENDPOINT_TYPE_BULK&&type!=USB_ENDPOINT_TYPE_INTERRUPT){
+		KdPrint(("Error, not a bulk pipe\n"));
+		return STATUS_INVALID_PARAMETER;
+	}
 	set_cmd_submit_usbip_header (h,
 		seqnum, devid,
-		in,
-		handle2ep(req->PipeHandle),
+		in, req->PipeHandle,
 		req->TransferFlags, req->TransferBufferLength);
 
 	*copied=sizeof(*h);
@@ -1048,47 +1083,126 @@ static void * seek_to_next_desc(PUSB_CONFIGURATION_DESCRIPTOR config, unsigned i
 	}while(1);
 }
 
+static void * seek_to_one_intf_desc(PUSB_CONFIGURATION_DESCRIPTOR config, unsigned int * offset, unsigned int num, unsigned int alternatesetting)
+{
+	PUSB_INTERFACE_DESCRIPTOR intf_desc;
+
+	do {
+		intf_desc = seek_to_next_desc(config, offset,
+			USB_INTERFACE_DESCRIPTOR_TYPE);
+		if(NULL==intf_desc)
+			break;
+		if(intf_desc->bInterfaceNumber<num)
+			continue;
+		if(intf_desc->bInterfaceNumber>num)
+			break;
+		if(intf_desc->bAlternateSetting<alternatesetting)
+			continue;
+		if(intf_desc->bAlternateSetting>alternatesetting)
+			break;
+		return intf_desc;
+	}while(1);
+	return NULL;
+}
+
+void show_pipe(unsigned int num, PUSBD_PIPE_INFORMATION pipe)
+{
+	KdPrint(("pipe num %d:\n"
+	    "MaximumPacketSize: %d\n"
+	    "EndpointAddress: 0x%02x\n"
+	    "Interval: %d\n"
+	    "PipeType: %d\n"
+	    "PiPeHandle: 0x%08x\n"
+	    "MaximumTransferSize %d\n"
+	    "PipeFlags 0x%08x\n", num,
+	    pipe->MaximumPacketSize,
+	    pipe->EndpointAddress,
+	    pipe->Interval,
+	    pipe->PipeType,
+	    pipe->PipeHandle,
+	    pipe->MaximumTransferSize,
+	    pipe->PipeFlags));
+}
+
+void set_pipe(PUSBD_PIPE_INFORMATION pipe, PUSB_ENDPOINT_DESCRIPTOR ep_desc)
+{
+	pipe->MaximumPacketSize = ep_desc->wMaxPacketSize;
+	pipe->EndpointAddress = ep_desc->bEndpointAddress;
+	pipe->Interval = ep_desc->bInterval;
+	pipe->PipeType = ep_desc->bmAttributes & USB_ENDPOINT_TYPE_MASK;
+	pipe->PipeHandle = make_pipe(ep_desc->bEndpointAddress,
+				pipe->PipeType,
+				ep_desc->bInterval);
+}
+
 int proc_select_interface(PPDO_DEVICE_DATA pdodata,
 		struct _URB_SELECT_INTERFACE * req)
 {
 	unsigned int i;
+	unsigned int offset=0;
 	USBD_INTERFACE_INFORMATION *intf= &req->Interface;
+	PUSB_INTERFACE_DESCRIPTOR intf_desc;
+	PUSB_ENDPOINT_DESCRIPTOR ep_desc;
 
 	if(NULL==pdodata->dev_config){
 		KdPrint(("Warning, select interface when have no get config\n"));
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	KdPrint(("config handle:%d\n", req->ConfigurationHandle));
-	KdPrint(("interface: len:%d num:%d class:%d subclass:%d"
-		"protocol:%d handle:%d numerofpipes:%d",
-		req->Interface.Length,
-		req->Interface.InterfaceNumber,
-		req->Interface.Class,
-		req->Interface.SubClass,
-		req->Interface.Protocol,
-		req->Interface.InterfaceHandle,
-		req->Interface.NumberOfPipes));
+	if(intf->Length < sizeof(*intf) - sizeof(intf->Pipes[0])){
+		KdPrint(("Warning, intf is too small\n"));
+		return STATUS_INVALID_PARAMETER;
+	}
+	KdPrint(("config handle:%08x\n", req->ConfigurationHandle));
+	KdPrint(("interface: len:%d int num:%d"
+	         "AlternateSetting:%d"
+		  "class:%d subclass:%d"
+		"protocol:%d handle:%08x numerofpipes:%d",
+		intf->Length,
+		intf->InterfaceNumber,
+		intf->AlternateSetting,
+		intf->Class,
+		intf->SubClass,
+		intf->Protocol,
+		intf->InterfaceHandle,
+		intf->NumberOfPipes));
 
+	i=(intf->Length +sizeof(intf->Pipes[0]) - sizeof(*intf))/
+			sizeof(intf->Pipes[0]);
+	if(i<intf->NumberOfPipes){
+		KdPrint(("Warning, why space is so small?"));
+		return STATUS_INVALID_PARAMETER;
+	}
+	/* FIXME  do we need set the other info in intf ? */
+	intf->NumberOfPipes = i;
+
+	intf_desc = seek_to_one_intf_desc(
+			pdodata->dev_config,
+			&offset, intf->InterfaceNumber,
+			intf->AlternateSetting);
+	/* FIXME if alternatesetting, we sound send out a ctrl urb ? */
+	if(NULL==intf_desc){
+		KdPrint(("Warning, can't select this interface\n"));
+		return STATUS_INVALID_PARAMETER;
+	}
+	if(intf->NumberOfPipes != intf_desc->bNumEndpoints){
+		KdPrint(("Warning, endpoints num no same: can hold:%d have %d\n",
+				intf->NumberOfPipes,
+				intf_desc->bNumEndpoints));
+		return STATUS_INVALID_PARAMETER;
+	}
 	for(i=0; i<intf->NumberOfPipes;i++){
-		KdPrint(("pipe %d:\n"
-		    "MaximumPacketSize: %d\n"
-		    "EndpointAddress: %d\n"
-		    "Interval: %d\n"
-		    "PipeType: %d\n"
-		    "PiPeHandle: %d\n"
-		    "MaximumTransferSize %d\n"
-		    "PipeFlags %d\n", i,
-		    intf->Pipes[i].MaximumPacketSize,
-		    intf->Pipes[i].EndpointAddress,
-		    intf->Pipes[i].Interval,
-		    intf->Pipes[i].PipeType,
-		    intf->Pipes[i].PipeHandle,
-		    intf->Pipes[i].MaximumTransferSize,
-		    intf->Pipes[i].PipeFlags));
-		if(intf->Pipes[i].MaximumTransferSize > 65536){
+		show_pipe(i, &intf->Pipes[i]);
+		if(intf->Pipes[i].MaximumTransferSize > 65536)
 			return STATUS_INVALID_PARAMETER;
+		ep_desc = seek_to_next_desc(
+			pdodata->dev_config,
+			&offset, USB_ENDPOINT_DESCRIPTOR_TYPE);
+		if(NULL==ep_desc){
+			KdPrint(("Warning, no ep desc\n"));
+			return STATUS_INVALID_DEVICE_REQUEST;
 		}
-
+		set_pipe(&intf->Pipes[i], ep_desc);
+		show_pipe(i, &intf->Pipes[i]);
 	}
 	return STATUS_SUCCESS;
 }
@@ -1150,22 +1264,9 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		intf->Protocol=intf_desc->bInterfaceProtocol;
 		/* it has no means */
 		intf->InterfaceHandle = (USBD_INTERFACE_HANDLE) 0x12345678;
+		KdPrint(("the %d interface\n", i));
 		for(j=0; j<intf->NumberOfPipes;j++){
-			KdPrint(("pipe %d:\n"
-			    "MaximumPacketSize: %d\n"
-			    "EndpointAddress: %d\n"
-			    "Interval: %d\n"
-			    "PipeType: %d\n"
-			    "PiPeHandle: %d\n"
-			    "MaximumTransferSize %d\n"
-			    "PipeFlags %d\n", j,
-			    intf->Pipes[j].MaximumPacketSize,
-			    intf->Pipes[j].EndpointAddress,
-			    intf->Pipes[j].Interval,
-			    intf->Pipes[j].PipeType,
-			    intf->Pipes[j].PipeHandle,
-			    intf->Pipes[j].MaximumTransferSize,
-			    intf->Pipes[j].PipeFlags));
+			show_pipe(j, &intf->Pipes[j]);
 
 			ep_desc = seek_to_next_desc(
 				pdodata->dev_config,
@@ -1175,29 +1276,9 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 				KdPrint(("Warning, no ep desc\n"));
 				return STATUS_INVALID_DEVICE_REQUEST;
 			}
-			intf->Pipes[j].MaximumPacketSize = ep_desc->wMaxPacketSize;
-			intf->Pipes[j].EndpointAddress = ep_desc->bEndpointAddress;
-			intf->Pipes[j].Interval = ep_desc->bInterval;
-			/* FIXME */
-			intf->Pipes[j].PipeType = ep_desc->bmAttributes
-				& USB_ENDPOINT_TYPE_MASK;
-			intf->Pipes[j].PipeHandle=(USBD_PIPE_HANDLE)
-				ep_desc->bEndpointAddress;
-			KdPrint(("pipe %d:\n"
-			    "MaximumPacketSize: %d\n"
-			    "EndpointAddress: %d\n"
-			    "Interval: %d\n"
-			    "PipeType: %d\n"
-			    "PiPeHandle: %d\n"
-			    "MaximumTransferSize %d\n"
-			    "PipeFlags %d\n", j,
-			    intf->Pipes[j].MaximumPacketSize,
-			    intf->Pipes[j].EndpointAddress,
-			    intf->Pipes[j].Interval,
-			    intf->Pipes[j].PipeType,
-			    intf->Pipes[j].PipeHandle,
-			    intf->Pipes[j].MaximumTransferSize,
-			    intf->Pipes[j].PipeFlags));
+
+			set_pipe(&intf->Pipes[j], ep_desc);
+			show_pipe(j, &intf->Pipes[j]);
 		}
 		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
 			sizeof(intf->Pipes[0]);

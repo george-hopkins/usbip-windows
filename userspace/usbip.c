@@ -304,9 +304,7 @@ static void attach_device(char * host, char * busid)
 		err("tcp connect");
 		return;
 	}
-	info ("go 1\n");
 	rhport = query_import_device(sockfd, busid, &uinf, &devfd);
-	info("go here\n");
 	if (rhport < 0) {
 		err("query");
 		return;

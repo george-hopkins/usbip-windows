@@ -236,6 +236,7 @@ typedef struct _PDO_DEVICE_DATA
 
     PWCHAR      HardwareIDs;
     PWCHAR	compatible_ids;
+    ULONG	compatible_ids_len;
 
     // Unique serail number of the device on the bus
 
@@ -254,13 +255,14 @@ typedef struct _PDO_DEVICE_DATA
 
     BOOLEAN     Present;
     BOOLEAN     ReportedMissing;
-    UCHAR       Reserved[2]; // for 4 byte alignment
+    UCHAR	speed;
+    UCHAR	unused; /* 4 bytes alignment */
 
     //
     // Used to track the intefaces handed out to other drivers.
     // If this value is non-zero, we fail query-remove.
     //
-    ULONG       ToasterInterfaceRefCount;
+    ULONG       InterfaceRefCount;
     PIRP	pending_read_irp;
     LIST_ENTRY  ioctl_q;
     LIST_ENTRY  wait_q;
@@ -592,26 +594,12 @@ Bus_PDO_QueryInterface(
     __in PPDO_DEVICE_DATA     DeviceData,
     __in  PIRP   Irp );
 
-BOOLEAN
-Bus_GetCrispinessLevel(
-    __in   PVOID Context,
-    __out  PUCHAR Level
-    );
-BOOLEAN
-Bus_SetCrispinessLevel(
-    __in   PVOID Context,
-    __out  UCHAR Level
-    );
-BOOLEAN
-Bus_IsSafetyLockEnabled(
-    __in PVOID Context
-    );
 VOID
-Bus_InterfaceReference (
+InterfaceReference (
    __in PVOID Context
    );
 VOID
-Bus_InterfaceDereference (
+InterfaceDereference (
    __in PVOID Context
    );
 

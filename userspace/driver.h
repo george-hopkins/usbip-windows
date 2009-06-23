@@ -24,16 +24,6 @@ Revision History:
 --*/
 
 //
-// Define an Interface Guid to access the proprietary toaster interface.
-// This guid is used to identify a specific interface in IRP_MN_QUERY_INTERFACE
-// handler.
-//
-
-DEFINE_GUID(GUID_TOASTER_INTERFACE_STANDARD, 
-        0xe0b27630, 0x5434, 0x11d3, 0xb8, 0x90, 0x0, 0xc0, 0x4f, 0xad, 0x51, 0x71);
-// {E0B27630-5434-11d3-B890-00C04FAD5171}
-
-//
 // This guid is used in IoCreateDeviceSecure call to create PDOs. The idea is to
 // allow the administrators to control access to the child device, in case the
 // device gets enumerated as a raw device - no function driver, by modifying the 
@@ -85,22 +75,6 @@ BOOLEAN
 //
 // Interface for getting and setting power level etc.,
 //
-typedef struct _TOASTER_INTERFACE_STANDARD {
-    //
-    // generic interface header
-    //
-    USHORT Size;
-    USHORT Version;
-    PVOID Context;
-    PINTERFACE_REFERENCE InterfaceReference;
-    PINTERFACE_DEREFERENCE InterfaceDereference;
-    //
-    // standard bus interfaces
-    //
-    PTOASTER_GET_CRISPINESS_LEVEL    GetCrispinessLevel;
-    PTOASTER_SET_CRISPINESS_LEVEL    SetCrispinessLevel;
-    PTOASTER_IS_CHILD_PROTECTED      IsSafetyLockEnabled; //):
-} TOASTER_INTERFACE_STANDARD, *PTOASTER_INTERFACE_STANDARD;
 
 #ifndef  STATUS_CONTINUE_COMPLETION //required to build driver in Win2K and XP build environment
 //
@@ -113,6 +87,3 @@ typedef struct _TOASTER_INTERFACE_STANDARD {
 #endif
 
 #endif
-
-
-
