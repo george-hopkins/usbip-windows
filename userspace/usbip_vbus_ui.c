@@ -297,11 +297,25 @@ int check_out(unsigned long num)
 	return 0;
 }
 
+void fix_iso_desc_endian(char *buf, int num)
+{
+	struct usbip_iso_packet_descriptor * ip_desc;
+	int i;
+	ip_desc = (struct usbip_iso_packet_descriptor *) buf;
+	for(i=0;i<num;i++){
+		ip_desc->offset = ntohl(ip_desc->offset);
+		ip_desc->status = ntohl(ip_desc->status);
+		ip_desc->length = ntohl(ip_desc->length);
+		ip_desc->actual_length = ntohl(ip_desc->actual_length);
+		ip_desc++;
+	}
+}
+
 DWORD WINAPI sock_thread(LPVOID p)
 {
 	struct fd_info * fdi=p;
 	int ret, len;
-	unsigned long out=0;
+	unsigned long out=0, in_len, iso_len;
 	char *buf;
 	struct usbip_header u;
 	HANDLE ev;
@@ -318,7 +332,15 @@ DWORD WINAPI sock_thread(LPVOID p)
 		}
 		usbip_header_correct_endian(&u, 0);
 	//	usbip_dump_header(&u);
-		if(check_out(htonl(u.base.seqnum))){
+		if(check_out(htonl(u.base.seqnum)))
+			in_len=0;
+		else
+			in_len=u.u.ret_submit.actual_length;
+
+		iso_len = u.u.ret_submit.number_of_packets
+				* sizeof(struct usbip_iso_packet_descriptor);
+
+		if(in_len==0&&iso_len==0){
 			ret=WriteFile(fdi->dev, (char *)&u, sizeof(u), &out, &ov);
 			if(!ret||out!=sizeof(u)){
 				err("last error:%ld\n",GetLastError());
@@ -328,24 +350,25 @@ DWORD WINAPI sock_thread(LPVOID p)
 			}
 			continue;
 		}
-		len=sizeof(u)+u.u.ret_submit.actual_length;
+		len=sizeof(u)+in_len+iso_len;
 		buf=malloc(len);
 		if(NULL==buf){
 			err("malloc\n");
 			break;
 		}
 		memcpy(buf, &u, sizeof(u));
-		if(u.u.ret_submit.actual_length){
-			ret=usbip_recv(fdi->sock, buf+sizeof(u),
-				u.u.ret_submit.actual_length);
-			if(ret!=u.u.ret_submit.actual_length){
-				err("recv from sock failed %d %d\n",
-						ret,
-						u.u.ret_submit.actual_length);
-				free(buf);
-				break;
-			}
+		ret=usbip_recv(fdi->sock, buf+sizeof(u),
+			in_len+iso_len);
+		if(ret != in_len + iso_len){
+			err("recv from sock failed %d %ld\n",
+					ret,
+					in_len + iso_len);
+			free(buf);
+			break;
 		}
+		if(iso_len)
+			fix_iso_desc_endian(buf+sizeof(u)+in_len,
+					u.u.ret_submit.number_of_packets);
 		ret=WriteFile(fdi->dev, buf, len, &out, &ov);
 		if(!ret||out!=len){
 			err("last error:%ld\n",GetLastError());
@@ -364,7 +387,7 @@ DWORD WINAPI dev_thread(LPVOID p)
 	struct fd_info *fdi=p;
 	struct usbip_header *u;
 	int ret;
-	unsigned long len;
+	unsigned long len, out_len, iso_len;
 	HANDLE ev;
 	OVERLAPPED ov;
 	long x;
@@ -388,17 +411,20 @@ DWORD WINAPI dev_thread(LPVOID p)
 			err("read dev ret:%d len:%ld\n",ret, len);
 			break;
 		}
-		if(!u->base.direction){
-			if(len!= ntohl(u->u.cmd_submit.transfer_buffer_length)
-				+sizeof(*u)){
-				err("read dev ret:%d len:%ld\n",ret, len);
+		if(!u->base.direction)
+			out_len=ntohl(u->u.cmd_submit.transfer_buffer_length);
+		else
+			out_len=0;
+		if(u->u.cmd_submit.number_of_packets)
+			iso_len=sizeof(struct usbip_iso_packet_descriptor)*
+				ntohl(u->u.cmd_submit.number_of_packets);
+		else
+			iso_len=0;
+		if(len!= sizeof(*u) + out_len + iso_len){
+				err("read dev ret:%d len:%ld out_len:%ld"
+					    "iso_len: %ld\n",
+					ret, len, out_len, iso_len);
 				break;
-		       }
-		} else {
-			if(len!= sizeof(*u)){
-				err("read dev ret:%d len:%ld\n",ret, len);
-				break;
-		       }
 		}
 		if(!u->base.direction&&!record_out(u->base.seqnum)){
 			err("out q full");
