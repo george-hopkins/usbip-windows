@@ -497,7 +497,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d\n", urb->Hdr.Function,
 				func2name(urb->Hdr.Function),
 				in?"in":"out", urb->TransferBufferLength,
-				len));
+				h->u.ret_submit.actual_length));
     urb->TransferBufferLength = h->u.ret_submit.actual_length;
     ioctl_status=STATUS_SUCCESS;
 end:
@@ -1461,9 +1461,14 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 				return STATUS_INVALID_PARAMETER;
 			}
 		}
-		intf_desc = seek_to_next_desc(
+		if(intf->InterfaceNumber!=i||intf->AlternateSetting!=0){
+			KdPrint(("Warning, I don't expect this"));
+			return STATUS_INVALID_PARAMETER;
+		}
+		intf_desc = seek_to_one_intf_desc(
 				pdodata->dev_config,
-				&offset, USB_INTERFACE_DESCRIPTOR_TYPE);
+				&offset, intf->InterfaceNumber,
+				intf->AlternateSetting);
 		if(NULL==intf_desc){
 			KdPrint(("Warning, no interface desc\n"));
 			return STATUS_INVALID_DEVICE_REQUEST;
