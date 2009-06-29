@@ -1,9 +1,6 @@
 Because I haven't implemented all the interfaces that a windows usb bus
-driver should provided, so some devices won't work now.
-
-Devices with  bulk and interrupt endpoints have the possibility to work.
-
-Devices with isochronous endpoints (most usb audio cards and usb webcams are such device) can't work now.
+driver should provided, and perhaps some bug in my code, so some devices 
+won't work now.
 
 USB devices I have tested ok for me:
 
@@ -13,6 +10,8 @@ two usb flash disk
 two hid device compatible usb token key
 one dlink DWL-G122 usb wireless card
 usb camera on asus eeepc 701 model
+one usb microphone (only work with user space usbipd daemon)
+one usb sound card (only work with user space usbipd daemon)
 
 To build userspace usbip tool:
 

@@ -239,7 +239,7 @@ static void correct_endian_ret_submit(struct usbip_header_ret_submit *pdu)
 	pdu->error_count = ntohl(pdu->error_count);
 }
 
-void usbip_header_correct_endian(struct usbip_header *pdu, int send)
+int usbip_header_correct_endian(struct usbip_header *pdu, int send)
 {
 	unsigned int cmd = 0;
 
@@ -260,13 +260,15 @@ void usbip_header_correct_endian(struct usbip_header *pdu, int send)
 		default:
 			/* NOTREACHED */
 			err("unknown command in pdu header: %d", cmd);
+			return -1;
 			//BUG();
 	}
+	return 0;
 }
 
 char big_buf[65536+4096];
 
-#define OUT_Q_LEN 2
+#define OUT_Q_LEN 256
 long out_q_seqnum_array[OUT_Q_LEN];
 
 int record_out(long num)
@@ -330,7 +332,8 @@ DWORD WINAPI sock_thread(LPVOID p)
 			err("strange recv %d\n",ret);
 			break;
 		}
-		usbip_header_correct_endian(&u, 0);
+		if(usbip_header_correct_endian(&u, 0)<0)
+			break;
 	//	usbip_dump_header(&u);
 		if(check_out(htonl(u.base.seqnum)))
 			in_len=0;

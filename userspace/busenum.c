@@ -584,7 +584,7 @@ void set_cmd_submit_usbip_header(struct usbip_header *h,
         h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
         h->u.cmd_submit.start_frame = 0;
         h->u.cmd_submit.number_of_packets = 0;
-        h->u.cmd_submit.interval = pipe2interval(pipe);
+        h->u.cmd_submit.interval = RtlUlongByteSwap(pipe2interval(pipe));
 }
 
 struct usb_ctrl_setup {
@@ -841,6 +841,7 @@ int prepare_iso_urb(struct _URB_ISOCH_TRANSFER * req,
 	int in = pipe2direct(req->PipeHandle);
 	int type = pipe2type(req->PipeHandle);
 	int i, offset, last_len;
+	char *p;
 
 	*copied = 0;
 
@@ -850,6 +851,7 @@ int prepare_iso_urb(struct _URB_ISOCH_TRANSFER * req,
 		KdPrint(("Error, not a iso pipe\n"));
 		return STATUS_INVALID_PARAMETER;
 	}
+
 	if(NULL==buf)
 		return STATUS_BUFFER_TOO_SMALL; \
 	if(req->TransferFlags & USBD_TRANSFER_DIRECTION_IN) {
@@ -871,67 +873,42 @@ int prepare_iso_urb(struct _URB_ISOCH_TRANSFER * req,
         h->u.cmd_submit.number_of_packets = RtlUlongByteSwap(req->NumberOfPackets);
 	*copied=sizeof(*h);
 	if(!in){
-		buf=NULL;
+		p=NULL;
 		if(req->TransferBuffer)
-			buf=req->TransferBuffer;
+			p=req->TransferBuffer;
 		else if (req->TransferBufferMDL){
-			buf=MmGetSystemAddressForMdlSafe(
+			p=MmGetSystemAddressForMdlSafe(
 			req->TransferBufferMDL,
 			LowPagePriority);
 		} else
 			KdPrint(("No transferbuffer for out\n"));
-		if(NULL==buf)
+		if(NULL==p)
 			return STATUS_INSUFFICIENT_RESOURCES;
-		RtlCopyMemory(h+1, buf, req->TransferBufferLength);
+		RtlCopyMemory(h+1, p, req->TransferBufferLength);
 		(*copied)+=req->TransferBufferLength;
 	}
 	ip_desc = (struct usbip_iso_packet_descriptor *)(buf + (*copied));
-	if(in){
-		offset=0;
-		for(i=0;i<req->NumberOfPackets;i++){
-			if(req->IsoPacket[i].Offset<offset){
-				KdPrint(("Warning strange iso packet offset:%d %d",
-				offset,	req->IsoPacket[i].Offset));
+	offset=0;
+	for(i=0;i<req->NumberOfPackets;i++){
+		if(req->IsoPacket[i].Offset<offset){
+			KdPrint(("Warning strange iso packet offset:%d %d",
+			offset,	req->IsoPacket[i].Offset));
 
-				return STATUS_INVALID_PARAMETER;
-			}
-			KdPrint(("iso packet offset:%d len:%d\n",
-			req->IsoPacket[i].Offset,
-			req->IsoPacket[i].Length));
-			ip_desc->offset = RtlUlongByteSwap(
-					req->IsoPacket[i].Offset);
-			if(i>0)
-				(ip_desc-1)->length = RtlUlongByteSwap(
-					req->IsoPacket[i].Offset -
-					offset);
-			offset = req->IsoPacket[i].Offset;
-			ip_desc->actual_length = 0;
-			ip_desc->status = 0;
-			ip_desc++;
+			return STATUS_INVALID_PARAMETER;
 		}
-		(ip_desc-1)->length = RtlUlongByteSwap(
-				req->TransferBufferLength - offset);
-	} else {
-		offset = 0;
-		for(i=0;i<req->NumberOfPackets;i++){
-			if(req->IsoPacket[i].Offset!=offset){
-				KdPrint(("Warning strange iso packet offset:%d %d",
-				offset,	req->IsoPacket[i].Offset));
-
-				return STATUS_INVALID_PARAMETER;
-			}
-			KdPrint(("iso packet offset:%d len:%d\n",
-			req->IsoPacket[i].Offset,
-			req->IsoPacket[i].Length));
-			ip_desc->offset = RtlUlongByteSwap(offset);
-			ip_desc->length = RtlUlongByteSwap(
-					req->IsoPacket[i].Length);
-			offset += req->IsoPacket[i].Length;
-			ip_desc->actual_length = 0;
-			ip_desc->status = 0;
-			ip_desc++;
-		}
+		ip_desc->offset = RtlUlongByteSwap(
+				req->IsoPacket[i].Offset);
+		if(i>0)
+			(ip_desc-1)->length = RtlUlongByteSwap(
+				req->IsoPacket[i].Offset -
+				offset);
+		offset = req->IsoPacket[i].Offset;
+		ip_desc->actual_length = 0;
+		ip_desc->status = 0;
+		ip_desc++;
 	}
+	(ip_desc-1)->length = RtlUlongByteSwap(
+				req->TransferBufferLength - offset);
 	(*copied)+=req->NumberOfPackets * sizeof(*ip_desc);
 	return STATUS_SUCCESS;
 }
@@ -1423,6 +1400,13 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 	return STATUS_SUCCESS;
 }
 
+int proc_reset_pipe(PPDO_DEVICE_DATA pdodata,
+		struct  _URB_PIPE_REQUEST * req)
+{
+	KdPrint(("reset pipe handle 0x%08x\n", req->PipeHandle));
+	return STATUS_SUCCESS;
+}
+
 int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		struct _URB_SELECT_CONFIGURATION * req)
 {
@@ -1436,6 +1420,10 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 		KdPrint(("Warning, select config when have no get config\n"));
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
+	if(NULL==req->ConfigurationDescriptor){
+		KdPrint(("Device unconfigured"));
+		return STATUS_SUCCESS;
+	}
 	if(!RtlEqualMemory(pdodata->dev_config,
 				req->ConfigurationDescriptor,
 				sizeof(*req->ConfigurationDescriptor))){
@@ -1446,24 +1434,12 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 	req->ConfigurationHandle=(USBD_CONFIGURATION_HANDLE) 0x12345678;
 	intf = &req->Interface;
 	for(i=0; i<req->ConfigurationDescriptor->bNumInterfaces; i++){
+		KdPrint(("the %d interface %p\n", i, intf));
 		if((char *)intf + sizeof(*intf) - sizeof(intf->Pipes[0])
 				- (char *)req
 				>req->Hdr.Length){
-			KdPrint(("Warning, too small urb for select config\n"));
-			return STATUS_INVALID_PARAMETER;
-		}
-		if(intf->NumberOfPipes>0){
-			if((char *)intf + sizeof(*intf) +
-				(intf->NumberOfPipes-1)*sizeof(intf->Pipes[0])
-				- (char *)req
-				> req->Hdr.Length){
-				KdPrint(("Warning, too small urb for select config\n"));
-				return STATUS_INVALID_PARAMETER;
-			}
-		}
-		if(intf->InterfaceNumber!=i||intf->AlternateSetting!=0){
-			KdPrint(("Warning, I don't expect this"));
-			return STATUS_INVALID_PARAMETER;
+			KdPrint(("Warning, not all interface select\n"));
+			return STATUS_SUCCESS;
 		}
 		intf_desc = seek_to_one_intf_desc(
 				pdodata->dev_config,
@@ -1480,12 +1456,24 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 					intf->NumberOfPipes));
 			return STATUS_INVALID_DEVICE_REQUEST;
 		}
+		if(intf->NumberOfPipes>0){
+			if((char *)intf + sizeof(*intf) +
+				(intf->NumberOfPipes-1)*sizeof(intf->Pipes[0])
+				- (char *)req
+				> req->Hdr.Length){
+				KdPrint(("Warning, small for select config\n"));
+				return STATUS_INVALID_PARAMETER;
+			}
+		}
+		if(intf->InterfaceNumber!=i||intf->AlternateSetting!=0){
+			KdPrint(("Warning, I don't expect this"));
+			return STATUS_INVALID_PARAMETER;
+		}
 		intf->Class=intf_desc->bInterfaceClass;
 		intf->SubClass=intf_desc->bInterfaceSubClass;
 		intf->Protocol=intf_desc->bInterfaceProtocol;
 		/* it has no means */
 		intf->InterfaceHandle = (USBD_INTERFACE_HANDLE) 0x12345678;
-		KdPrint(("the %d interface\n", i));
 		for(j=0; j<intf->NumberOfPipes;j++){
 			show_pipe(j, &intf->Pipes[j]);
 
@@ -1508,6 +1496,20 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 	return STATUS_SUCCESS;
 }
 
+void show_iso_urb(struct _URB_ISOCH_TRANSFER * iso)
+{
+	int i;
+	KdPrint(("iso_num:%d len:%d",
+				iso->NumberOfPackets,
+				iso->TransferBufferLength));
+	for(i=0; i<iso->NumberOfPackets; i++){
+		KdPrint(("num: %d len:%d off:%d\n",
+					i,
+					iso->IsoPacket[i].Length,
+				iso->IsoPacket[i].Offset));
+	}
+}
+
 int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 {
 	PURB urb=(PURB) arg;
@@ -1521,6 +1523,11 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 		case URB_FUNCTION_SELECT_CONFIGURATION:
 			KdPrint(("select configuration\n"));
 			return proc_select_config(pdodata, arg);
+		case URB_FUNCTION_RESET_PIPE:
+			return proc_reset_pipe(pdodata, arg);
+		case URB_FUNCTION_ISOCH_TRANSFER:
+			/* show_iso_urb(arg); */
+			/* passthrough */
 		case URB_FUNCTION_CLASS_DEVICE:
 		case URB_FUNCTION_CLASS_INTERFACE:
 		case URB_FUNCTION_CLASS_ENDPOINT:
@@ -1532,7 +1539,6 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
 		case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
 		case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
-		case URB_FUNCTION_ISOCH_TRANSFER:
 		case URB_FUNCTION_SELECT_INTERFACE:
 			return STATUS_PENDING;
 		default:
