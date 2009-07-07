@@ -7,6 +7,8 @@
 #define WINVER 0x0501
 #include "usbip.h"
 
+void dbg_file(char *fmt, ...);
+
 void pack_uint32_t(int pack, uint32_t *num)
 {
 	uint32_t i;
@@ -54,6 +56,7 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 
 	if (!bufflen)
 		return 0;
+	dbg_file("do %d: len:%d\n", sending, bufflen);
 
 	do {
 		ssize_t nbytes;
@@ -66,12 +69,13 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 		if (nbytes <= 0)
 			return -1;
 
-		buff	= (void *) ((intptr_t) buff + nbytes);
+		buff	= buff + nbytes;
 		bufflen	-= nbytes;
 		total	+= nbytes;
 
 	} while (bufflen > 0);
 
+	dbg_file("do %d: len:%d finish\n", sending, bufflen);
 
 	return total;
 }
