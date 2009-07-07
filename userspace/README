@@ -1,6 +1,9 @@
 Because I haven't implemented all the interfaces that a windows usb bus
 driver should provided, and perhaps some bug in my code, so some devices 
-won't work now.
+won't work now. 
+
+Because I don't know enough about PNP management in windows, one big problem 
+is that "stop  device"  is buggy now.
 
 USB devices I have tested ok for me:
 
@@ -12,6 +15,7 @@ one dlink DWL-G122 usb wireless card
 usb camera on asus eeepc 701 model
 one usb microphone (only work with user space usbipd daemon)
 one usb sound card (only work with user space usbipd daemon)
+one usb webcam (only work with user space  usbipd daemon)
 
 To build userspace usbip tool:
 

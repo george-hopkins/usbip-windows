@@ -38,6 +38,7 @@ ULONG BusEnumDebugLevel = BUS_DEFAULT_DEBUG_OUTPUT_LEVEL;
 
 GLOBALS Globals;
 
+NPAGED_LOOKASIDE_LIST g_lookaside;
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (INIT, DriverEntry)
@@ -75,6 +76,9 @@ Return Value:
 {
 
     Bus_KdPrint_Def (BUS_DBG_SS_TRACE, ("Driver Entry \n"));
+
+    ExInitializeNPagedLookasideList(&g_lookaside, NULL,NULL,0,
+		    sizeof(struct urb_req), 'USBV', 0);
 
     //
     // Save the RegistryPath for WMI.
@@ -314,6 +318,10 @@ static void copy_iso_data(char *dest, int dest_len,
 			KdPrint(("Warning, why this?"));
 			break;
 		}
+		if(offset+urb->IsoPacket[i].Length > src_len){
+			KdPrint(("Warning, why that?"));
+			break;
+		}
 		RtlCopyMemory(dest + urb->IsoPacket[i].Offset,
 				src + offset, urb->IsoPacket[i].Length);
 		offset+=urb->IsoPacket[i].Length;
@@ -331,8 +339,8 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     ULONG len;
     PIO_STACK_LOCATION irpstack;
     struct usbip_header *h;
-    PIRP ioctl_irp;
-    char *buf, *urb_buf;
+    PIRP ioctl_irp=NULL;
+    char *buf;
     int in, type, i;
     /* This is a quick hack, in windows, the offsets of all types of
      * TansferFlags and TransferBuffer and TransferBufferLength are the same,
@@ -341,6 +349,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     struct usbip_iso_packet_descriptor * ip_desc;
     NTSTATUS ioctl_status = STATUS_INVALID_PARAMETER;
     int found=0, iso_len=0, in_len=0;
+    struct urb_req * urb_r;
 
     irpstack = IoGetCurrentIrpStackLocation (irp);
     len = irpstack->Parameters.Write.Length;
@@ -349,26 +358,31 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	    return STATUS_INVALID_PARAMETER;
     }
     h = irp->AssociatedIrp.SystemBuffer;
-    KeAcquireSpinLock(&pdodata->wait_q_lock, &oldirql);
-    for (le = pdodata->wait_q.Flink;
-         le != &pdodata->wait_q;
+    KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+    for (le = pdodata->ioctl_q.Flink;
+         le != &pdodata->ioctl_q;
          le = le->Flink) {
-        ioctl_irp = CONTAINING_RECORD (le, IRP, Tail.Overlay.ListEntry);
-	if(ioctl_irp->Tail.Overlay.DriverContext[0]==(PVOID)h->base.seqnum){
+        urb_r = CONTAINING_RECORD (le, struct urb_req, list);
+	if(urb_r->seq_num == h->base.seqnum){
 		found=1;
-                RemoveEntryList (&ioctl_irp->Tail.Overlay.ListEntry);
-                InitializeListHead(&ioctl_irp->Tail.Overlay.ListEntry);
+                RemoveEntryList (le);
+		ioctl_irp = urb_r->irp;
 		break;
 	}
     }
-    KeReleaseSpinLock(&pdodata->wait_q_lock, oldirql);
+    KeReleaseSpinLock(&pdodata->q_lock, oldirql);
     if(!found){
 	    KdPrint(("can't found %d\n", h->base.seqnum));
 	    return STATUS_INVALID_PARAMETER;
     }
     irp->IoStatus.Information = len;
     irpstack = IoGetCurrentIrpStackLocation(ioctl_irp);
-
+    if(!urb_r->send){
+	    KdPrint(("Warning, recv not send"));
+	    ioctl_status = STATUS_INVALID_PARAMETER;
+	    goto end;
+    }
+    ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
     switch ( irpstack->Parameters.DeviceIoControl.IoControlCode ){
 	    case IOCTL_INTERNAL_USB_SUBMIT_URB:
 		    break;
@@ -474,7 +488,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	else if (urb->TransferBufferMDL){
 		buf=MmGetSystemAddressForMdlSafe(
 		urb->TransferBufferMDL,
-		LowPagePriority);
+		NormalPagePriority);
 	} else
 		KdPrint(("No transferbuffer fo in\n"));
 	if(NULL==buf){
@@ -499,10 +513,16 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 				in?"in":"out", urb->TransferBufferLength,
 				h->u.ret_submit.actual_length));
     urb->TransferBufferLength = h->u.ret_submit.actual_length;
-    ioctl_status=STATUS_SUCCESS;
+    ioctl_status = STATUS_SUCCESS;
 end:
     ioctl_irp->IoStatus.Status = ioctl_status;
+    /* it seems windows client usb driver will think
+     * IoCompleteRequest is running at DISPATCH_LEVEL
+     * so without this it will change IRQL sometimes,
+     * and introduce to a dead of my userspace program */
+    KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
     IoCompleteRequest(ioctl_irp, IO_NO_INCREMENT);
+    KeLowerIrql(oldirql);
     return STATUS_SUCCESS;
 }
 
@@ -517,6 +537,9 @@ Bus_Write (
     PFDO_DEVICE_DATA    fdoData;
     PCOMMON_DEVICE_DATA     commonData;
     PPDO_DEVICE_DATA pdodata;
+
+
+    KdPrint(("why\n"));
 
     PAGED_CODE ();
 
@@ -1020,40 +1043,69 @@ int set_read_irp_data(PIRP read_irp, PIRP ioctl_irp, unsigned long seq_num,
      return STATUS_INVALID_PARAMETER;
 }
 
-void add_wait_q(PPDO_DEVICE_DATA pdodata, PIRP Irp);
-
 int process_read_irp(PPDO_DEVICE_DATA pdodata, PIRP read_irp)
 {
     NTSTATUS status = STATUS_PENDING;
     KIRQL oldirql;
-    PIRP ioctl_irp;
-    PLIST_ENTRY le = NULL;
-    unsigned long seq_num;
+    PIRP ioctl_irp = NULL;
+    struct urb_req *urb_r;
+    PLIST_ENTRY le;
+    unsigned long seq_num, old_seq_num;
+    int found=0;
     KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-    if (!IsListEmpty(&pdodata->ioctl_q)){
-	seq_num=++(pdodata->seq_num);
-	le = RemoveHeadList(&pdodata->ioctl_q);
-    } else {
-	    if(pdodata->pending_read_irp)
-		    status = STATUS_INVALID_DEVICE_REQUEST;
-	    else{
+    for (le = pdodata->ioctl_q.Flink;
+		    le !=&pdodata->ioctl_q;
+		    le = le->Flink){
+	urb_r = CONTAINING_RECORD(le, struct urb_req, list);
+	if(urb_r->send==0){
+		ioctl_irp=urb_r->irp;
+		seq_num = ++(pdodata->seq_num);
+		urb_r->send=1;
+		old_seq_num = urb_r->seq_num;
+		urb_r->seq_num = seq_num;
+		break;
+	}
+    }
+    if(NULL==ioctl_irp){
+	if(pdodata->pending_read_irp)
+		status = STATUS_INVALID_DEVICE_REQUEST;
+	else{
 		IoMarkIrpPending(read_irp);
 		pdodata->pending_read_irp = read_irp;
-	    }
+	}
     }
     KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-    if(le){
-	ioctl_irp = CONTAINING_RECORD(le, IRP, Tail.Overlay.ListEntry);
-	KdPrint(("get a ioctl_irp %p\n", ioctl_irp));
-	ioctl_irp->Tail.Overlay.DriverContext[0]=(PVOID)seq_num;
-	status = set_read_irp_data(read_irp, ioctl_irp, seq_num, pdodata->devid);
-       if(status == STATUS_SUCCESS)
-		add_wait_q(pdodata, ioctl_irp);
-       else{
-	       ioctl_irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
-               IoCompleteRequest (ioctl_irp, IO_NO_INCREMENT);
-       }
+    if(NULL==ioctl_irp)
+	    return status;
+    if(old_seq_num)
+	    KdPrint(("Error, why old_seq_num %d\n", old_seq_num));
+    KdPrint(("get a ioctl_irp %p %d\n", ioctl_irp, seq_num));
+    status = set_read_irp_data(read_irp, ioctl_irp, seq_num, pdodata->devid);
+    if(status == STATUS_SUCCESS)
+	return status;
+    /* set_read_irp failed, we must complete ioctl_irp */
+    found=0;
+    KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+    for (le = pdodata->ioctl_q.Flink;
+		    le !=&pdodata->ioctl_q;
+		    le = le->Flink) {
+	urb_r = CONTAINING_RECORD(le, struct urb_req, list);
+	if(urb_r->seq_num == seq_num){
+		found = 1;
+		RemoveEntryList(le);
+		break;
+	}
     }
+    KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+    if(!found){ /* perhaps it complete by other */
+	KdPrint(("Warning, we can't found irp we should release"));
+	return status;
+    }
+    ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+    if(urb_r->send!=1||urb_r->irp!=ioctl_irp)
+	    KdPrint(("Warning, why it change"));
+    ioctl_irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+    IoCompleteRequest (ioctl_irp, IO_NO_INCREMENT);
     return status;
 }
 
@@ -1073,6 +1125,8 @@ Bus_Read (
     PAGED_CODE ();
 
     commonData = (PCOMMON_DEVICE_DATA) DeviceObject->DeviceExtension;
+
+    KdPrint(("enter Read func\n"));
 
     if (!commonData->IsFDO) {
         Irp->IoStatus.Status = status = STATUS_INVALID_DEVICE_REQUEST;
@@ -1104,6 +1158,7 @@ Bus_Read (
     }
     status = process_read_irp(pdodata, Irp);
 END:
+    KdPrint(("Read return:0x%08x\n", status));
     if(status != STATUS_PENDING){
 	Irp->IoStatus.Status = status;
 	IoCompleteRequest (Irp, IO_NO_INCREMENT);
@@ -1400,6 +1455,13 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 	return STATUS_SUCCESS;
 }
 
+int proc_get_frame(PPDO_DEVICE_DATA pdodata,
+		struct  _URB_GET_CURRENT_FRAME_NUMBER * req)
+{
+	req->FrameNumber = 0;
+	return STATUS_SUCCESS;
+}
+
 int proc_reset_pipe(PPDO_DEVICE_DATA pdodata,
 		struct  _URB_PIPE_REQUEST * req)
 {
@@ -1525,6 +1587,8 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 			return proc_select_config(pdodata, arg);
 		case URB_FUNCTION_RESET_PIPE:
 			return proc_reset_pipe(pdodata, arg);
+		case URB_FUNCTION_GET_CURRENT_FRAME_NUMBER:
+			return proc_get_frame(pdodata, arg);
 		case URB_FUNCTION_ISOCH_TRANSFER:
 			/* show_iso_urb(arg); */
 			/* passthrough */
@@ -1549,46 +1613,46 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 	return STATUS_INVALID_PARAMETER;
 }
 
-void add_wait_q(PPDO_DEVICE_DATA pdodata, PIRP Irp)
-{
-    KIRQL oldirql;
-
-    KeAcquireSpinLock(&pdodata->wait_q_lock, &oldirql);
-	InsertTailList(&pdodata->wait_q, &Irp->Tail.Overlay.ListEntry);
-    KeReleaseSpinLock(&pdodata->wait_q_lock, oldirql);
-
-    return;
-}
-
-
-
 int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)
 {
     KIRQL oldirql;
     PIRP read_irp;
-    NTSTATUS status=STATUS_PENDING;
+    NTSTATUS status = STATUS_PENDING;
     unsigned long seq_num;
+    struct urb_req * urb_r;
 
+    urb_r = ExAllocateFromNPagedLookasideList(&g_lookaside);
+    if(NULL==urb_r)
+	    return STATUS_INSUFFICIENT_RESOURCES;
+    RtlZeroMemory(urb_r, sizeof(*urb_r));
+    urb_r->irp = Irp;
     KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-    read_irp=pdodata->pending_read_irp;
+    read_irp = pdodata->pending_read_irp;
     pdodata->pending_read_irp=NULL;
     if(NULL==read_irp){
            IoMarkIrpPending(Irp);
-	   InsertTailList(&pdodata->ioctl_q, &Irp->Tail.Overlay.ListEntry);\
+	   IoSetCancelRoutine(Irp, NULL);
+	   InsertTailList(&pdodata->ioctl_q, &urb_r->list);
     } else
 	    seq_num = ++(pdodata->seq_num);
     KeReleaseSpinLock(&pdodata->q_lock, oldirql);
     if(NULL==read_irp)
-	    return status;
-
+	    return STATUS_PENDING;
     read_irp->IoStatus.Status = set_read_irp_data(read_irp, Irp, seq_num,
 		    pdodata->devid);
     if(read_irp->IoStatus.Status == STATUS_SUCCESS){
-	Irp->Tail.Overlay.DriverContext[0]=(PVOID)seq_num;
-	add_wait_q(pdodata, Irp);
-    }
-    else
+	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+	IoMarkIrpPending(Irp);
+	urb_r->send = 1;
+	urb_r->seq_num = seq_num;
+	IoSetCancelRoutine(Irp, NULL);
+	InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+    } else {
+	ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
 	status = STATUS_INVALID_PARAMETER;
+    }
+    KdPrint(("finish read_irp seqnum %d\n", seq_num));
     IoCompleteRequest(read_irp, IO_NO_INCREMENT);
     return status;
 }
@@ -1605,8 +1669,6 @@ Bus_Internal_IoCtl (
     PPDO_DEVICE_DATA        pdoData;
     PVOID                   buffer;
     PCOMMON_DEVICE_DATA     commonData;
-
-    PAGED_CODE ();
 
     commonData = (PCOMMON_DEVICE_DATA) DeviceObject->DeviceExtension;
     KdPrint(("Enter internal control %d\r\n", commonData->IsFDO));
@@ -1804,6 +1866,8 @@ Return Value:
     PAGED_CODE ();
 
     Bus_KdPrint_Def (BUS_DBG_SS_TRACE, ("Unload\n"));
+
+    ExDeleteNPagedLookasideList(&g_lookaside);
 
     //
     // All the device objects should be gone.

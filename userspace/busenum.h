@@ -265,9 +265,7 @@ typedef struct _PDO_DEVICE_DATA
     ULONG       InterfaceRefCount;
     PIRP	pending_read_irp;
     LIST_ENTRY  ioctl_q;
-    LIST_ENTRY  wait_q;
-    KSPIN_LOCK  q_lock;
-    KSPIN_LOCK  wait_q_lock;
+    KSPIN_LOCK	q_lock;
     PFILE_OBJECT fo;
     unsigned int devid;
     unsigned long seq_num;
@@ -355,6 +353,14 @@ typedef struct _FDO_DEVICE_DATA
 
     TOASTER_BUS_WMI_STD_DATA   StdToasterBusData;
 } FDO_DEVICE_DATA, *PFDO_DEVICE_DATA;
+
+struct urb_req {
+	LIST_ENTRY list;
+	PIRP irp;
+	KEVENT *event;
+	unsigned long seq_num;
+	unsigned int send;
+};
 
 #define FDO_FROM_PDO(pdoData) \
           ((PFDO_DEVICE_DATA) (pdoData)->ParentFdo->DeviceExtension)

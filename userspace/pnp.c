@@ -1097,12 +1097,9 @@ bus_init_pdo (
     pdodata->SystemPowerState = PowerSystemWorking;
 
     InitializeListHead(&pdodata->ioctl_q);
-    InitializeListHead(&pdodata->wait_q);
     KeInitializeSpinLock(&pdodata->q_lock);
-    KeInitializeSpinLock(&pdodata->wait_q_lock);
 
-    pdo->Flags |= DO_POWER_PAGABLE;
-
+    pdo->Flags |= DO_POWER_PAGABLE|DO_DIRECT_IO;
 
     ExAcquireFastMutex (&fdodata->Mutex);
     InsertTailList(&fdodata->ListOfPDOs, &pdodata->Link);
@@ -1284,10 +1281,14 @@ NTSTATUS bus_get_ports_status(ioctl_usbvbus_get_ports_status * st,
     return STATUS_SUCCESS;
 }
 
+
+extern NPAGED_LOOKASIDE_LIST g_lookaside;
+
 void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 {
     KIRQL oldirql;
     PIRP irp;
+    struct urb_req * urb_r;
     PLIST_ENTRY le;
 
     //FIXME
@@ -1295,37 +1296,28 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 	irp=NULL;
 	le=NULL;
 	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-	if (!IsListEmpty(&pdodata->ioctl_q)){
+	if (!IsListEmpty(&pdodata->ioctl_q))
 		le = RemoveHeadList(&pdodata->ioctl_q);
-		if(pdodata->pending_read_irp){
-			KdPrint(("waring, not null read_irp"));
-		}
-	} else {
-	    irp=pdodata->pending_read_irp;
-	    pdodata->pending_read_irp=NULL;
-        }
-        KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	if(NULL==le&&NULL==irp)
-		break;
-	if(le)
-	    irp = CONTAINING_RECORD(le, IRP, Tail.Overlay.ListEntry);
-	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
-        IoCompleteRequest (irp, IO_NO_INCREMENT);
-    }while(1);
-
-    do {
-	le=NULL;
-	KeAcquireSpinLock(&pdodata->wait_q_lock, &oldirql);
-	if (!IsListEmpty(&pdodata->wait_q)){
-		le = RemoveHeadList(&pdodata->wait_q);
+	if(le){
+		urb_r = CONTAINING_RECORD(le, struct urb_req, list);
+		/* FIMXE event */
+		irp = urb_r->irp;
 	}
-        KeReleaseSpinLock(&pdodata->wait_q_lock, oldirql);
-	if(NULL==le)
-		break;
+	if(NULL==irp){
+		irp=pdodata->pending_read_irp;
+		pdodata->pending_read_irp=NULL;
+	}
+        KeReleaseSpinLock(&pdodata->q_lock, oldirql);
 	if(le)
-	    irp = CONTAINING_RECORD(le, IRP, Tail.Overlay.ListEntry);
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+	if(NULL==irp)
+		break;
 	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
-        IoCompleteRequest (irp, IO_NO_INCREMENT);
+	if(le)
+		KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
+	IoCompleteRequest (irp, IO_NO_INCREMENT);
+	if(le)
+		KeLowerIrql(oldirql);
     }while(1);
 }
 

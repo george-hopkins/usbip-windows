@@ -311,6 +311,8 @@ static void attach_device(char * host, char * busid)
 	}
 	info("new usb device attached to usbvbus port %d\n", rhport);
 	usbip_vbus_forward(sockfd, devfd);
+	closesocket(sockfd);
+	CloseHandle(devfd);
 	return;
 }
 

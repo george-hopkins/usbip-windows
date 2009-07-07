@@ -544,13 +544,11 @@ void usbip_vbus_forward(SOCKET sockfd, HANDLE devfd)
 
 		switch (ret){
 		case WAIT_OBJECT_0:
-			ret = dev_read_completed(devfd, sockfd, &ov[0]);
-			if(ret)
+			if(dev_read_completed(devfd, sockfd, &ov[0]))
 				return;
 			break;
 		case WAIT_OBJECT_0 + 1:
-			ret = sock_read_completed(sockfd, devfd, &ov[1], &ov[2]);
-			if(ret)
+			if(sock_read_completed(sockfd, devfd, &ov[1], &ov[2]))
 				return;
 			break;
 		default:
