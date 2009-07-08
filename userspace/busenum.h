@@ -94,6 +94,12 @@ Revision History:
 #define BUS_DBG_WMI_INFO                0x00040000
 #define BUS_DBG_WMI_ERROR               0x00080000
 
+enum usb_device_speed {
+       USB_SPEED_UNKNOWN = 0,                  /* enumerating */
+       USB_SPEED_LOW, USB_SPEED_FULL,          /* usb 1.1 */
+       USB_SPEED_HIGH,                         /* usb 2.0 */
+       USB_SPEED_VARIABLE                      /* wireless (usb 2.5) */
+};
 
 #if DBG
 #define BUS_DEFAULT_DEBUG_OUTPUT_LEVEL 0x000FFFFF

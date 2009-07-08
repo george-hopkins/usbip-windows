@@ -16,6 +16,8 @@ usb camera on asus eeepc 701 model
 one usb microphone (only work with user space usbipd daemon)
 one usb sound card (only work with user space usbipd daemon)
 one usb webcam (only work with user space  usbipd daemon)
+one usb TVBOX (it will display one or two screensoft and freeze, I don't know why,
+perhaps because the iso transfer is not so iso...)
 
 To build userspace usbip tool:
 

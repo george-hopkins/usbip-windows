@@ -297,7 +297,7 @@ int check_out(unsigned long num)
 	return 0;
 }
 
-void fix_iso_desc_endian(char *buf, int num, int in_len)
+void fix_iso_desc_endian(char *buf, int num)
 {
 	struct usbip_iso_packet_descriptor * ip_desc;
 	int i;
@@ -311,8 +311,6 @@ void fix_iso_desc_endian(char *buf, int num, int in_len)
 		all+=ip_desc->actual_length;
 		ip_desc++;
 	}
-	if(in_len!=all)
-		err("why it not equal %d %d\n", in_len, all);
 }
 
 #ifdef DEBUG
@@ -386,7 +384,7 @@ int write_to_dev(char * buf, int buf_len, int len, SOCKET sockfd,
 	}
 	if(iso_len)
 		fix_iso_desc_endian(sock_read_buf+sizeof(*u)+in_len,
-					u->u.ret_submit.number_of_packets, in_len);
+					u->u.ret_submit.number_of_packets);
 	ret=WriteFile(devfd, buf, len, &out, ov);
 	if(!ret||out!=len){
 		err("last error:%ld\n",GetLastError());

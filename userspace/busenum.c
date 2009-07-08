@@ -465,7 +465,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	    ip_desc = (struct usbip_iso_packet_descriptor *)
 		    ((char *)(h+1) + in_len);
 	    for(i=0; i<urb->NumberOfPackets; i++){
-		    if(ip_desc->offset != urb->IsoPacket[i].Offset){
+		    if(ip_desc->offset > urb->IsoPacket[i].Offset){
 			    KdPrint(("Warning, why offset changed?%d %d %d %d\n",
 				i,
 				ip_desc->offset,
@@ -537,9 +537,6 @@ Bus_Write (
     PFDO_DEVICE_DATA    fdoData;
     PCOMMON_DEVICE_DATA     commonData;
     PPDO_DEVICE_DATA pdodata;
-
-
-    KdPrint(("why\n"));
 
     PAGED_CODE ();
 
@@ -1372,12 +1369,22 @@ void show_pipe(unsigned int num, PUSBD_PIPE_INFORMATION pipe)
 	    pipe->PipeFlags));
 }
 
-void set_pipe(PUSBD_PIPE_INFORMATION pipe, PUSB_ENDPOINT_DESCRIPTOR ep_desc)
+void set_pipe(PUSBD_PIPE_INFORMATION pipe,
+		PUSB_ENDPOINT_DESCRIPTOR ep_desc,
+		unsigned char speed)
 {
+	int mult;
 	pipe->MaximumPacketSize = ep_desc->wMaxPacketSize;
 	pipe->EndpointAddress = ep_desc->bEndpointAddress;
 	pipe->Interval = ep_desc->bInterval;
 	pipe->PipeType = ep_desc->bmAttributes & USB_ENDPOINT_TYPE_MASK;
+	/* From usb_submit_urb in linux */
+	if(pipe->PipeType==USB_ENDPOINT_TYPE_ISOCHRONOUS
+		&&speed==USB_SPEED_HIGH){
+		mult = 1 + ((pipe->MaximumPacketSize >> 11) & 0x03);
+		pipe->MaximumPacketSize &= 0x7ff;
+		pipe->MaximumPacketSize *= mult;
+	}
 	pipe->PipeHandle = make_pipe(ep_desc->bEndpointAddress,
 				pipe->PipeType,
 				ep_desc->bInterval);
@@ -1449,7 +1456,7 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 			KdPrint(("Warning, no ep desc\n"));
 			return STATUS_INVALID_DEVICE_REQUEST;
 		}
-		set_pipe(&intf->Pipes[i], ep_desc);
+		set_pipe(&intf->Pipes[i], ep_desc, pdodata->speed);
 		show_pipe(i, &intf->Pipes[i]);
 	}
 	return STATUS_SUCCESS;
@@ -1548,7 +1555,7 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 				return STATUS_INVALID_DEVICE_REQUEST;
 			}
 
-			set_pipe(&intf->Pipes[j], ep_desc);
+			set_pipe(&intf->Pipes[j], ep_desc, pdodata->speed);
 			show_pipe(j, &intf->Pipes[j]);
 		}
 		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*

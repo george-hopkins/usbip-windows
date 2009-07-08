@@ -1158,13 +1158,6 @@ Return Value:
     return STATUS_SUCCESS;
 }
 
-enum usb_device_speed {
-	USB_SPEED_UNKNOWN = 0,                  /* enumerating */
-	USB_SPEED_LOW, USB_SPEED_FULL,          /* usb 1.1 */
-	USB_SPEED_HIGH,                         /* usb 2.0 */
-	USB_SPEED_VARIABLE                      /* wireless (usb 2.5) */
-};
-
 BOOLEAN USB_BUSIFFN IsDeviceHighSpeed(PVOID context){
 	PPDO_DEVICE_DATA pdodata = context;
 	KdPrint(("IsDeviceHighSpeed called, it is %d\n", pdodata->speed));
