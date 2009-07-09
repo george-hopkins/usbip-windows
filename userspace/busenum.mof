@@ -1,6 +1,6 @@
 [Dynamic, Provider("WMIProv"),
  WMI,
- Description("Toaster Bus driver information"),
+ Description("Virtual USB Bus driver information"),
  guid("{0006A660-8F12-11d2-B854-00C04FAD5171}"),
  locale("MS\\0x409")]
 class ToasterBusInformation
