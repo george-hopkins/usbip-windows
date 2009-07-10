@@ -221,29 +221,33 @@ struct usbip_header {
 	} u;
 };
 
-void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_REQUEST *req)
+void try_save_config(PPDO_DEVICE_DATA pdodata, struct _URB_CONTROL_DESCRIPTOR_REQUEST *req, int in_len)
 {
 	PUSB_CONFIGURATION_DESCRIPTOR cfg;
 	if(req->Hdr.Function != URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE||
 		req->DescriptorType!=USB_CONFIGURATION_DESCRIPTOR_TYPE)
 		return;
 	cfg=(PUSB_CONFIGURATION_DESCRIPTOR) req->TransferBuffer;
-	if(req->TransferBufferLength<sizeof(*cfg))
+	if(in_len<sizeof(*cfg)){
+		KdPrint(("not full len\n"));
 		return;
+	}
 	if(cfg->bDescriptorType!=USB_CONFIGURATION_DESCRIPTOR_TYPE||
-			cfg->wTotalLength!=req->TransferBufferLength)
+			cfg->wTotalLength!=in_len){
+		KdPrint(("not full cfg\n"));
 		return;
+	}
 	KdPrint(("save config for using when select config\n"));
 	pdodata->dev_config = ExAllocatePoolWithTag(
 		NonPagedPool,
-		req->TransferBufferLength, BUSENUM_POOL_TAG);
+		in_len, BUSENUM_POOL_TAG);
 	if(!pdodata->dev_config){
 		KdPrint(("Warning, can't malloc %d bytes\n",
-					req->TransferBufferLength));
+					in_len));
 		return;
 	}
 	RtlCopyMemory(pdodata->dev_config, req->TransferBuffer,
-			req->TransferBufferLength);
+			in_len);
 	return;
 }
 
@@ -505,7 +509,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	else
 		RtlCopyMemory(buf, h+1, in_len);
 	if(NULL==pdodata->dev_config)
-		try_save_config(pdodata, urb);
+		try_save_config(pdodata, urb, in_len);
     }
     urb->Hdr.Status = tran_usb_status(h->u.ret_submit.status, in, type);
     KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d\n", urb->Hdr.Function,

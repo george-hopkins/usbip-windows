@@ -18,6 +18,7 @@ one usb sound card (only work with user space usbipd daemon)
 one usb webcam (only work with user space  usbipd daemon)
 one usb TVBOX (it will display one or two screensoft and freeze, I don't know why,
 perhaps because the iso transfer is not so iso...)
+one bluetooth dongle (just test file transfter from my phone)
 
 To build userspace usbip tool:
 
