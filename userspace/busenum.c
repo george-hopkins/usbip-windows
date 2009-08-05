@@ -104,9 +104,9 @@ Return Value:
     //
     // Set entry points into the driver
     //
-    DriverObject->MajorFunction [IRP_MJ_CREATE] = Bus_Close;
+    DriverObject->MajorFunction [IRP_MJ_CREATE] = Bus_Create;
     DriverObject->MajorFunction [IRP_MJ_CLEANUP] = Bus_Cleanup;
-    DriverObject->MajorFunction [IRP_MJ_CLOSE] = Bus_Create;
+    DriverObject->MajorFunction [IRP_MJ_CLOSE] = Bus_Close;
     DriverObject->MajorFunction [IRP_MJ_READ] = Bus_Read;
     DriverObject->MajorFunction [IRP_MJ_WRITE] = Bus_Write;
     DriverObject->MajorFunction [IRP_MJ_PNP] = Bus_PnP;
