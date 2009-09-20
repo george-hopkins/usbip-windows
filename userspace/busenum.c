@@ -1255,7 +1255,8 @@ Bus_Cleanup (
     if(pdodata){
 	    pdodata->fo=NULL;
 	    irpstack->FileObject->FsContext=NULL;
-	    bus_unplug_dev(pdodata->SerialNo, fdodata);
+	    if(pdodata->Present)
+		bus_unplug_dev(pdodata->SerialNo, fdodata);
     }
     status = STATUS_SUCCESS;
     irp->IoStatus.Information = 0;
@@ -1695,11 +1696,13 @@ Bus_Internal_IoCtl (
 
     pdoData = (PPDO_DEVICE_DATA) DeviceObject->DeviceExtension;
 
+#if 0
     if (pdoData->Present==FALSE) {
         Irp->IoStatus.Status = status = STATUS_DEVICE_OFF_LINE;
         IoCompleteRequest (Irp, IO_NO_INCREMENT);
         return status;
     }
+#endif
 
     buffer = Irp->AssociatedIrp.SystemBuffer;
     inlen = irpStack->Parameters.DeviceIoControl.InputBufferLength;

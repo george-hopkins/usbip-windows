@@ -1005,6 +1005,79 @@ Return Value:
     return STATUS_MORE_PROCESSING_REQUIRED; // Keep this IRP
 }
 
+extern NPAGED_LOOKASIDE_LIST g_lookaside;
+
+void complete_pending_read_irp(PPDO_DEVICE_DATA pdodata)
+{
+	KIRQL oldirql;
+	PIRP irp;
+
+	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+	irp=pdodata->pending_read_irp;
+	pdodata->pending_read_irp=NULL;
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+	if(NULL==irp)
+		return;
+	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
+	IoCompleteRequest (irp, IO_NO_INCREMENT);
+	return;
+}
+
+void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
+{
+    KIRQL oldirql;
+    PIRP irp;
+    struct urb_req * urb_r;
+    PLIST_ENTRY le;
+
+    //FIXME
+    do {
+	irp=NULL;
+	le=NULL;
+	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+	if (!IsListEmpty(&pdodata->ioctl_q))
+		le = RemoveHeadList(&pdodata->ioctl_q);
+	if(le){
+		urb_r = CONTAINING_RECORD(le, struct urb_req, list);
+		/* FIMXE event */
+		irp = urb_r->irp;
+	}
+	if(NULL==irp){
+		irp=pdodata->pending_read_irp;
+		pdodata->pending_read_irp=NULL;
+	}
+        KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+	if(le)
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+	if(NULL==irp)
+		break;
+	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
+	if(le)
+		KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
+	IoCompleteRequest (irp, IO_NO_INCREMENT);
+	if(le)
+		KeLowerIrql(oldirql);
+    }while(1);
+}
+
+
+VOID DpcRoutine(PKDPC dpc, PVOID context, PVOID junk1, PVOID junk2)
+{
+	PPDO_DEVICE_DATA pdodata = context;
+	complete_pending_irp(pdodata);
+	return;
+}
+
+void sched_complete_irp(PPDO_DEVICE_DATA pdodata)
+{
+	LARGE_INTEGER duetime;
+	duetime.QuadPart=-50000000;
+
+	KeInitializeTimer(&pdodata->timer);
+	KeInitializeDpc(&pdodata->dpc, DpcRoutine, pdodata);
+	KeSetTimer(&pdodata->timer, duetime, &pdodata->dpc);
+}
+
 NTSTATUS
 Bus_DestroyPdo (
     PDEVICE_OBJECT      Device,
@@ -1282,44 +1355,6 @@ NTSTATUS bus_get_ports_status(ioctl_usbvbus_get_ports_status * st,
 }
 
 
-extern NPAGED_LOOKASIDE_LIST g_lookaside;
-
-void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
-{
-    KIRQL oldirql;
-    PIRP irp;
-    struct urb_req * urb_r;
-    PLIST_ENTRY le;
-
-    //FIXME
-    do {
-	irp=NULL;
-	le=NULL;
-	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-	if (!IsListEmpty(&pdodata->ioctl_q))
-		le = RemoveHeadList(&pdodata->ioctl_q);
-	if(le){
-		urb_r = CONTAINING_RECORD(le, struct urb_req, list);
-		/* FIMXE event */
-		irp = urb_r->irp;
-	}
-	if(NULL==irp){
-		irp=pdodata->pending_read_irp;
-		pdodata->pending_read_irp=NULL;
-	}
-        KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	if(le)
-		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-	if(NULL==irp)
-		break;
-	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
-	if(le)
-		KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
-	IoCompleteRequest (irp, IO_NO_INCREMENT);
-	if(le)
-		KeLowerIrql(oldirql);
-    }while(1);
-}
 
 NTSTATUS
 bus_unplug_dev (
@@ -1371,7 +1406,8 @@ bus_unplug_dev (
             Bus_KdPrint (fdodata, BUS_DBG_IOCTL_INFO,
                           ("Plugged out %d\n", pdodata->SerialNo));
             pdodata->Present = FALSE;
-	    complete_pending_irp(pdodata);
+            complete_pending_read_irp(pdodata);
+	    sched_complete_irp(pdodata);
             found = 1;
             if (!all) {
                 break;

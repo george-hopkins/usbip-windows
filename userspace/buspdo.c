@@ -1092,8 +1092,8 @@ Return Value:
         break;
 
     case BusRelations: // Not handled by PDO
-    case EjectionRelations: // optional for PDO
     case RemovalRelations: // // optional for PDO
+    case EjectionRelations: // optional for PDO
     default:
         status = Irp->IoStatus.Status;
     }

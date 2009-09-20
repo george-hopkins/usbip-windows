@@ -276,6 +276,8 @@ typedef struct _PDO_DEVICE_DATA
     unsigned int devid;
     unsigned long seq_num;
     char * dev_config;
+    KTIMER timer;
+    KDPC dpc;
     UNICODE_STRING  usb_dev_interface;
 
     //
