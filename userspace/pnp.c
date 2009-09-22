@@ -1018,23 +1018,26 @@ void complete_pending_read_irp(PPDO_DEVICE_DATA pdodata)
 	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
 	if(NULL==irp)
 		return;
-	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
+	irp->IoStatus.Status = STATUS_DEVICE_NOT_CONNECTED;
 	IoCompleteRequest (irp, IO_NO_INCREMENT);
 	return;
 }
 
 void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 {
-    KIRQL oldirql;
     PIRP irp;
     struct urb_req * urb_r;
     PLIST_ENTRY le;
+    KIRQL oldirql;
+    int count=0;
 
     //FIXME
+    KdPrint(("finish pending irp"));
+    KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
     do {
 	irp=NULL;
 	le=NULL;
-	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+	KeAcquireSpinLockAtDpcLevel(&pdodata->q_lock);
 	if (!IsListEmpty(&pdodata->ioctl_q))
 		le = RemoveHeadList(&pdodata->ioctl_q);
 	if(le){
@@ -1042,40 +1045,23 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 		/* FIMXE event */
 		irp = urb_r->irp;
 	}
-	if(NULL==irp){
-		irp=pdodata->pending_read_irp;
-		pdodata->pending_read_irp=NULL;
-	}
-        KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	if(le)
-		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-	if(NULL==irp)
+	if(irp==NULL){
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
 		break;
-	irp->IoStatus.Status = STATUS_DEVICE_OFF_LINE;
-	if(le)
+	}
+	if(count>2){
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		KdPrint(("sleep 50ms, let pnp manager send irp"));
+		KeDelayExecutionThread(KernelMode, FALSE, -500000);
 		KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
+	} else {
+		KeReleaseSpinLock(&pdodata->q_lock, DISPATCH_LEVEL);
+	}
+	ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+	irp->IoStatus.Status = STATUS_DEVICE_NOT_CONNECTED;
 	IoCompleteRequest (irp, IO_NO_INCREMENT);
-	if(le)
-		KeLowerIrql(oldirql);
+	count++;
     }while(1);
-}
-
-
-VOID DpcRoutine(PKDPC dpc, PVOID context, PVOID junk1, PVOID junk2)
-{
-	PPDO_DEVICE_DATA pdodata = context;
-	complete_pending_irp(pdodata);
-	return;
-}
-
-void sched_complete_irp(PPDO_DEVICE_DATA pdodata)
-{
-	LARGE_INTEGER duetime;
-	duetime.QuadPart=-50000000;
-
-	KeInitializeTimer(&pdodata->timer);
-	KeInitializeDpc(&pdodata->dpc, DpcRoutine, pdodata);
-	KeSetTimer(&pdodata->timer, duetime, &pdodata->dpc);
 }
 
 NTSTATUS
@@ -1406,8 +1392,7 @@ bus_unplug_dev (
             Bus_KdPrint (fdodata, BUS_DBG_IOCTL_INFO,
                           ("Plugged out %d\n", pdodata->SerialNo));
             pdodata->Present = FALSE;
-            complete_pending_read_irp(pdodata);
-	    sched_complete_irp(pdodata);
+	    complete_pending_read_irp(pdodata);
             found = 1;
             if (!all) {
                 break;
@@ -1419,11 +1404,25 @@ bus_unplug_dev (
 
     if (found) {
         IoInvalidateDeviceRelations (fdodata->UnderlyingPDO, BusRelations);
-        return STATUS_SUCCESS;
-    }
 
+    ExAcquireFastMutex (&fdodata->Mutex);
+
+    for (entry = fdodata->ListOfPDOs.Flink;
+         entry != &fdodata->ListOfPDOs;
+         entry = entry->Flink) {
+
+        pdodata = CONTAINING_RECORD (entry, PDO_DEVICE_DATA, Link);
+
+        if( pdodata->Present ==FALSE){
+            complete_pending_irp(pdodata);
+	}
+    }
+    ExReleaseFastMutex (&fdodata->Mutex);
     Bus_KdPrint (fdodata, BUS_DBG_IOCTL_ERROR,
                   ("Device %d is not present\n", addr));
+    return  STATUS_SUCCESS;
+    }
+
 
     return STATUS_INVALID_PARAMETER;
 }

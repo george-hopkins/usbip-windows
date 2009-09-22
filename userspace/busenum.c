@@ -352,7 +352,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     struct _URB_ISOCH_TRANSFER *urb;
     struct usbip_iso_packet_descriptor * ip_desc;
     NTSTATUS ioctl_status = STATUS_INVALID_PARAMETER;
-    int found=0, iso_len=0, in_len=0;
+    int found=0, iso_len=0, in_len=0, send;
     struct urb_req * urb_r;
 
     irpstack = IoGetCurrentIrpStackLocation (irp);
@@ -368,9 +368,12 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
          le = le->Flink) {
         urb_r = CONTAINING_RECORD (le, struct urb_req, list);
 	if(urb_r->seq_num == h->base.seqnum){
-		found=1;
-                RemoveEntryList (le);
 		ioctl_irp = urb_r->irp;
+		if(IoSetCancelRoutine(ioctl_irp, NULL)){
+			found=1;
+			RemoveEntryList (le);
+			send = urb_r->send;
+		}
 		break;
 	}
     }
@@ -379,14 +382,14 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	    KdPrint(("can't found %d\n", h->base.seqnum));
 	    return STATUS_INVALID_PARAMETER;
     }
+    ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
     irp->IoStatus.Information = len;
     irpstack = IoGetCurrentIrpStackLocation(ioctl_irp);
-    if(!urb_r->send){
+    if(!send){
 	    KdPrint(("Warning, recv not send"));
 	    ioctl_status = STATUS_INVALID_PARAMETER;
 	    goto end;
     }
-    ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
     switch ( irpstack->Parameters.DeviceIoControl.IoControlCode ){
 	    case IOCTL_INTERNAL_USB_SUBMIT_URB:
 		    break;
@@ -1074,37 +1077,21 @@ int process_read_irp(PPDO_DEVICE_DATA pdodata, PIRP read_irp)
 		IoMarkIrpPending(read_irp);
 		pdodata->pending_read_irp = read_irp;
 	}
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+	return status;
     }
-    KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-    if(NULL==ioctl_irp)
-	    return status;
     if(old_seq_num)
 	    KdPrint(("Error, why old_seq_num %d\n", old_seq_num));
     KdPrint(("get a ioctl_irp %p %d\n", ioctl_irp, seq_num));
     status = set_read_irp_data(read_irp, ioctl_irp, seq_num, pdodata->devid);
-    if(status == STATUS_SUCCESS)
+    if(status == STATUS_SUCCESS||!IoSetCancelRoutine(ioctl_irp, NULL)){
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
 	return status;
+    }
     /* set_read_irp failed, we must complete ioctl_irp */
-    found=0;
-    KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-    for (le = pdodata->ioctl_q.Flink;
-		    le !=&pdodata->ioctl_q;
-		    le = le->Flink) {
-	urb_r = CONTAINING_RECORD(le, struct urb_req, list);
-	if(urb_r->seq_num == seq_num){
-		found = 1;
-		RemoveEntryList(le);
-		break;
-	}
-    }
+    RemoveEntryList (le);
     KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-    if(!found){ /* perhaps it complete by other */
-	KdPrint(("Warning, we can't found irp we should release"));
-	return status;
-    }
     ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-    if(urb_r->send!=1||urb_r->irp!=ioctl_irp)
-	    KdPrint(("Warning, why it change"));
     ioctl_irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
     IoCompleteRequest (ioctl_irp, IO_NO_INCREMENT);
     return status;
@@ -1625,6 +1612,38 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 	return STATUS_INVALID_PARAMETER;
 }
 
+void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
+{
+	PLIST_ENTRY le = NULL;
+	int found=0;
+	struct urb_req * urb_r;
+	PPDO_DEVICE_DATA pdodata;
+	KIRQL oldirql = Irp->CancelIrql;
+
+	pdodata = (PPDO_DEVICE_DATA) pdo->DeviceExtension;
+	IoReleaseCancelSpinLock(DISPATCH_LEVEL);
+	KdPrint(("Cancle Irp %p called", Irp));
+	KeAcquireSpinLockAtDpcLevel(&pdodata->q_lock);
+	for (le = pdodata->ioctl_q.Flink;
+         le != &pdodata->ioctl_q;
+         le = le->Flink) {
+		urb_r = CONTAINING_RECORD (le, struct urb_req, list);
+		if(urb_r->irp == Irp){
+			found=1;
+			RemoveEntryList (le);
+			break;
+		}
+	}
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+	if(found){
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+	} else {
+		KdPrint(("Warning, why we can't found it?"));
+	}
+	Irp->IoStatus.Status = STATUS_CANCELLED;
+	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+}
+
 int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)
 {
     KIRQL oldirql;
@@ -1642,9 +1661,15 @@ int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)
     read_irp = pdodata->pending_read_irp;
     pdodata->pending_read_irp=NULL;
     if(NULL==read_irp){
-           IoMarkIrpPending(Irp);
-	   IoSetCancelRoutine(Irp, NULL);
-	   InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+	   IoSetCancelRoutine(Irp, cancel_irp);
+	   if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+		return STATUS_CANCELLED;
+           } else {
+		IoMarkIrpPending(Irp);
+		InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+	   }
     } else
 	    seq_num = ++(pdodata->seq_num);
     KeReleaseSpinLock(&pdodata->q_lock, oldirql);
@@ -1654,12 +1679,18 @@ int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)
 		    pdodata->devid);
     if(read_irp->IoStatus.Status == STATUS_SUCCESS){
 	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-	IoMarkIrpPending(Irp);
 	urb_r->send = 1;
 	urb_r->seq_num = seq_num;
-	IoSetCancelRoutine(Irp, NULL);
-	InsertTailList(&pdodata->ioctl_q, &urb_r->list);
-	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+        IoSetCancelRoutine(Irp, cancel_irp);
+	if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+		status = STATUS_CANCELLED;
+	} else {
+		IoMarkIrpPending(Irp);
+		InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+	}
     } else {
 	ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
 	status = STATUS_INVALID_PARAMETER;
@@ -1695,15 +1726,13 @@ Bus_Internal_IoCtl (
     }
 
     pdoData = (PPDO_DEVICE_DATA) DeviceObject->DeviceExtension;
-
 #if 0
     if (pdoData->Present==FALSE) {
-        Irp->IoStatus.Status = status = STATUS_DEVICE_OFF_LINE;
+        Irp->IoStatus.Status = status = STATUS_DEVICE_NOT_CONNECTED;
         IoCompleteRequest (Irp, IO_NO_INCREMENT);
         return status;
     }
 #endif
-
     buffer = Irp->AssociatedIrp.SystemBuffer;
     inlen = irpStack->Parameters.DeviceIoControl.InputBufferLength;
 
