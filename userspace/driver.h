@@ -1,28 +1,3 @@
-/*++
-Copyright (c) 1990-2000    Microsoft Corporation All Rights Reserved
-
-Module Name:
-
-    driver.h
-
-Abstract:
-
-    This module contains the common declarations for the 
-    bus, function and filter drivers.
-
-Author:
-Environment:
-
-    kernel mode only
-
-Notes:
-
-
-Revision History:
-
-
---*/
-
 //
 // This guid is used in IoCreateDeviceSecure call to create PDOs. The idea is to
 // allow the administrators to control access to the child device, in case the

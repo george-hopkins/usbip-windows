@@ -1,31 +1,3 @@
-/*++
-
-Copyright (c) 1990-2000  Microsoft Corporation All Rights Reserved
-
-Module Name:
-
-    BUSENUM.C
-
-Abstract:
-
-    This module contains the entry points for a toaster bus driver.
-
-Author:
-
-
-Environment:
-
-    kernel mode only
-
-Revision History:
-
-    Cleaned up sample 05/05/99
-    Fixed the create_close and ioctl handler to fail the request 
-    sent on the child stack - 3/15/04
-
-
---*/
-
 #include "busenum.h"
 
 
@@ -307,11 +279,11 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 		struct _URB_SELECT_INTERFACE * req);
 
 
-static void copy_iso_data(char *dest, int dest_len,
-		char *src, int src_len, struct _URB_ISOCH_TRANSFER *urb)
+static void copy_iso_data(char *dest, ULONG dest_len,
+		char *src, ULONG src_len, struct _URB_ISOCH_TRANSFER *urb)
 {
-	int i;
-	int offset;
+	ULONG i;
+	ULONG offset;
 	offset=0;
 	for(i=0;i<urb->NumberOfPackets;i++){
 		if(!urb->IsoPacket[i].Length)
@@ -345,14 +317,16 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
     struct usbip_header *h;
     PIRP ioctl_irp=NULL;
     char *buf;
-    int in, type, i;
+    int in, type;
+	ULONG i;
     /* This is a quick hack, in windows, the offsets of all types of
      * TansferFlags and TransferBuffer and TransferBufferLength are the same,
      * so we just use _URB_ISOCH_TRANSFER */
     struct _URB_ISOCH_TRANSFER *urb;
     struct usbip_iso_packet_descriptor * ip_desc;
     NTSTATUS ioctl_status = STATUS_INVALID_PARAMETER;
-    int found=0, iso_len=0, in_len=0, send;
+    int found=0, iso_len=0, send;
+	ULONG in_len=0;
     struct urb_req * urb_r;
 
     irpstack = IoGetCurrentIrpStackLocation (irp);
@@ -435,7 +409,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	case URB_FUNCTION_SELECT_INTERFACE:
 		in=0;
 		type=USB_ENDPOINT_TYPE_CONTROL;
-		if(post_select_interface(pdodata, urb)!=STATUS_SUCCESS)
+		if(post_select_interface(pdodata, (struct _URB_SELECT_INTERFACE *)urb)!=STATUS_SUCCESS)
 			goto end;
 		break;
 	default:
@@ -443,7 +417,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 					urb->Hdr.Function));
 		goto end;
     }
-    if(h->u.ret_submit.actual_length > urb->TransferBufferLength){
+    if((ULONG)h->u.ret_submit.actual_length > urb->TransferBufferLength){
 	KdPrint(("Warning, ret too big %d %d!\n",
 				h->u.ret_submit.actual_length,
 				urb->TransferBufferLength));
@@ -508,11 +482,11 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		goto end;
 	}
 	if(iso_len && in_len != urb->TransferBufferLength)
-		copy_iso_data(buf, urb->TransferBufferLength, h+1, in_len, urb);
+		copy_iso_data(buf, urb->TransferBufferLength, (char*)(h+1), in_len, urb);
 	else
 		RtlCopyMemory(buf, h+1, in_len);
 	if(NULL==pdodata->dev_config)
-		try_save_config(pdodata, urb, in_len);
+		try_save_config(pdodata, (struct _URB_CONTROL_DESCRIPTOR_REQUEST *)urb, in_len);
     }
     urb->Hdr.Status = tran_usb_status(h->u.ret_submit.status, in, type);
     KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d\n", urb->Hdr.Function,
@@ -651,7 +625,7 @@ if (len < sizeof(*h) || NULL == buf) \
 	return STATUS_BUFFER_TOO_SMALL; \
 
 
-int prepare_reset_dev(char *buf, int len,  int *copied, unsigned long seqnum,
+int prepare_reset_dev(char *buf, int len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
@@ -665,11 +639,11 @@ int prepare_reset_dev(char *buf, int len,  int *copied, unsigned long seqnum,
 }
 
 int prepare_select_config_urb(struct _URB_SELECT_CONFIGURATION  *req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, int len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup *)h->u.cmd_submit.setup;
 	int in=0;
 	*copied = 0;
 
@@ -691,11 +665,11 @@ int prepare_select_config_urb(struct _URB_SELECT_CONFIGURATION  *req,
 }
 
 int prepare_select_interface_urb(struct _URB_SELECT_INTERFACE  *req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, int len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup * )h->u.cmd_submit.setup;
 	int in=0;
 	*copied = 0;
 
@@ -717,12 +691,12 @@ int prepare_select_interface_urb(struct _URB_SELECT_INTERFACE  *req,
 }
 
 int prepare_class_vendor_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, size_t len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
-	int in=req->TransferFlags & USBD_TRANSFER_DIRECTION_IN, type, recip;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup *)h->u.cmd_submit.setup;
+	char in=req->TransferFlags & USBD_TRANSFER_DIRECTION_IN, type, recip;
 	*copied = 0;
 
 	KdPrint(("flag:%d pbuf:%p len:%d RequestTypeReservedBits:%02x"
@@ -777,7 +751,7 @@ int prepare_class_vendor_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
 	in,
 	type, recip, req->Request);
 //FIXME what is the usage of RequestTypeReservedBits?
-	setup->wLength = req->TransferBufferLength;
+	setup->wLength = (unsigned short)req->TransferBufferLength;
 	setup->wValue = req->Value;
 	setup->wIndex = req->Index;
 
@@ -791,11 +765,11 @@ int prepare_class_vendor_urb(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST  *req,
 }
 
 int prepare_get_intf_descriptor_urb(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, int len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup *)h->u.cmd_submit.setup;
 	*copied = 0;
 
 	CHECK_SIZE_READ
@@ -808,7 +782,7 @@ int prepare_get_intf_descriptor_urb(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 	USBIP_DIR_IN,
 	BMREQUEST_STANDARD, BMREQUEST_TO_INTERFACE, USB_REQUEST_GET_DESCRIPTOR);
 
-	setup->wLength = req->TransferBufferLength;
+	setup->wLength = (unsigned short)req->TransferBufferLength;
 	setup->wValue = (req->DescriptorType<<8)|req->Index;
 
 	KdPrint(("pbuf:%p len:%d Index:%02x"
@@ -824,11 +798,11 @@ int prepare_get_intf_descriptor_urb(struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 }
 
 int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, int len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
-	struct usb_ctrl_setup * setup=h->u.cmd_submit.setup;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup *)h->u.cmd_submit.setup;
 	*copied = 0;
 
 	CHECK_SIZE_READ
@@ -841,7 +815,7 @@ int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 	USBIP_DIR_IN,
 	BMREQUEST_STANDARD, BMREQUEST_TO_DEVICE, USB_REQUEST_GET_DESCRIPTOR);
 
-	setup->wLength = req->TransferBufferLength;
+	setup->wLength = (unsigned short)req->TransferBufferLength;
 	setup->wValue = (req->DescriptorType<<8) |req->Index<<8;
 
 	switch(req->DescriptorType){
@@ -860,14 +834,15 @@ int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 }
 
 int prepare_iso_urb(struct _URB_ISOCH_TRANSFER * req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, size_t len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
 	struct usbip_iso_packet_descriptor * ip_desc;
 	int in = pipe2direct(req->PipeHandle);
 	int type = pipe2type(req->PipeHandle);
-	int i, offset, last_len;
+	ULONG i, offset;
+	int last_len;
 	char *p;
 
 	*copied = 0;
@@ -941,7 +916,7 @@ int prepare_iso_urb(struct _URB_ISOCH_TRANSFER * req,
 }
 
 int prepare_bulk_urb(struct _URB_BULK_OR_INTERRUPT_TRANSFER * req,
-		char *buf, int len,  int *copied, unsigned long seqnum,
+		char *buf, size_t len,  ULONG_PTR *copied, unsigned long seqnum,
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
@@ -1309,7 +1284,7 @@ static void * seek_to_next_desc(PUSB_CONFIGURATION_DESCRIPTOR config, unsigned i
 	do {
 		if(o + sizeof(*desc) > config->wTotalLength)
 			return NULL;
-		desc=(char *)config + o;
+		desc=(PUSB_COMMON_DESCRIPTOR)((char *)config + o);
 		if(desc->bLength + o > config->wTotalLength)
 			return NULL;
 		o+=desc->bLength;
@@ -1365,7 +1340,7 @@ void set_pipe(PUSBD_PIPE_INFORMATION pipe,
 		PUSB_ENDPOINT_DESCRIPTOR ep_desc,
 		unsigned char speed)
 {
-	int mult;
+	USHORT mult;
 	pipe->MaximumPacketSize = ep_desc->wMaxPacketSize;
 	pipe->EndpointAddress = ep_desc->bEndpointAddress;
 	pipe->Interval = ep_desc->bInterval;
@@ -1423,7 +1398,7 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 	intf->NumberOfPipes = i;
 
 	intf_desc = seek_to_one_intf_desc(
-			pdodata->dev_config,
+			(PUSB_CONFIGURATION_DESCRIPTOR)pdodata->dev_config,
 			&offset, intf->InterfaceNumber,
 			intf->AlternateSetting);
 	/* FIXME if alternatesetting, we sound send out a ctrl urb ? */
@@ -1442,7 +1417,7 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 		if(intf->Pipes[i].MaximumTransferSize > 65536)
 			return STATUS_INVALID_PARAMETER;
 		ep_desc = seek_to_next_desc(
-			pdodata->dev_config,
+			(PUSB_CONFIGURATION_DESCRIPTOR)pdodata->dev_config,
 			&offset, USB_ENDPOINT_DESCRIPTOR_TYPE);
 		if(NULL==ep_desc){
 			KdPrint(("Warning, no ep desc\n"));
@@ -1503,7 +1478,7 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 			return STATUS_SUCCESS;
 		}
 		intf_desc = seek_to_one_intf_desc(
-				pdodata->dev_config,
+				(PUSB_CONFIGURATION_DESCRIPTOR)pdodata->dev_config,
 				&offset, intf->InterfaceNumber,
 				intf->AlternateSetting);
 		if(NULL==intf_desc){
@@ -1539,7 +1514,7 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 			show_pipe(j, &intf->Pipes[j]);
 
 			ep_desc = seek_to_next_desc(
-				pdodata->dev_config,
+				(PUSB_CONFIGURATION_DESCRIPTOR)pdodata->dev_config,
 				&offset, USB_ENDPOINT_DESCRIPTOR_TYPE);
 
 			if(NULL==ep_desc){
@@ -1550,8 +1525,8 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 			set_pipe(&intf->Pipes[j], ep_desc, pdodata->speed);
 			show_pipe(j, &intf->Pipes[j]);
 		}
-		intf=(char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
-			sizeof(intf->Pipes[0]);
+		intf=(USBD_INTERFACE_INFORMATION *)((char *)intf  + sizeof(*intf) + (intf->NumberOfPipes - 1)*
+			sizeof(intf->Pipes[0]));
 	}
 	/* it seems we must return now */
 	return STATUS_SUCCESS;
@@ -1559,7 +1534,7 @@ int proc_select_config(PPDO_DEVICE_DATA pdodata,
 
 void show_iso_urb(struct _URB_ISOCH_TRANSFER * iso)
 {
-	int i;
+	ULONG i;
 	KdPrint(("iso_num:%d len:%d",
 				iso->NumberOfPackets,
 				iso->TransferBufferLength));
@@ -1612,6 +1587,8 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 	return STATUS_INVALID_PARAMETER;
 }
 
+DRIVER_CANCEL cancel_irp;
+
 void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
 {
 	PLIST_ENTRY le = NULL;
@@ -1621,7 +1598,7 @@ void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
 	KIRQL oldirql = Irp->CancelIrql;
 
 	pdodata = (PPDO_DEVICE_DATA) pdo->DeviceExtension;
-	IoReleaseCancelSpinLock(DISPATCH_LEVEL);
+//	IoReleaseCancelSpinLock(DISPATCH_LEVEL);
 	KdPrint(("Cancle Irp %p called", Irp));
 	KeAcquireSpinLockAtDpcLevel(&pdodata->q_lock);
 	for (le = pdodata->ioctl_q.Flink;
@@ -1642,6 +1619,7 @@ void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
 	}
 	Irp->IoStatus.Status = STATUS_CANCELLED;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	IoReleaseCancelSpinLock(Irp->CancelIrql);
 }
 
 int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)

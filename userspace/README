@@ -1,3 +1,22 @@
+Addition by Arjan Mels on 16 Feb 2011:
+
+I modified the build script and code slightly to allow a x64 driver to compile.
+I have tested this and it works, there are some issues however:
+
+1) x64 drivers for Vista & Windows 7 need to be signed with a special type of 
+	code signing certificate (kernel mode driver code signing certificate)
+	otherwise they will not operate. 
+	Workaround in a administrative command prompt enter: "bcdedit /set testsigning on"
+	Now all drivers will be accepted: THIS IS A SECURITY RISK
+	I will try to get a version signed by the people of ReactOS 
+	(http://reactos.org/wiki/Driver_Signing)
+
+2) Mass Storage USB devices do not work for me under Window 7 x64 (It is not clear to
+	me yet if it is due to x64 or Windows 7). Other USB devices do work.
+
+
+Original by Lepton Wu:
+
 Because I haven't implemented all the interfaces that a windows usb bus
 driver should provided, and perhaps some bug in my code, so some devices 
 won't work now. 

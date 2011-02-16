@@ -1,29 +1,3 @@
-/*++
-
-Copyright (c) 1990-2000    Microsoft Corporation All Rights Reserved
-
-Module Name:
-
-    BusPdo.c
-
-Abstract:
-
-    This module handles plug & play calls for the child PDO.
-
-Author:
-
-Environment:
-
-    kernel mode only
-
-Notes:
-
-
-Revision History:
-
-
---*/
-
 #include "busenum.h"
 #include <wdmguid.h>
 #include <usbdi.h>
@@ -1249,7 +1223,7 @@ Bus_PDO_QueryInterface(
 
    bus_intf = (USB_BUS_INTERFACE_USBDI_V1 *)
 	   irpStack->Parameters.QueryInterface.Interface;
-   bus_intf->Size = valid_size[version];
+   bus_intf->Size = (USHORT)valid_size[version];
    switch(version){
 	   case USB_BUSIF_USBDI_VERSION_1:
 		   bus_intf->IsDeviceHighSpeed = IsDeviceHighSpeed;

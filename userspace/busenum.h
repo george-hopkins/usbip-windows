@@ -1,29 +1,3 @@
-/*++
-
-Copyright (c) 1990-2000 Microsoft Corporation All Rights Reserved
-
-Module Name:
-
-    BUSENUM.H
-
-Abstract:
-
-    This module contains the common private declarations
-    for the Toaster Bus enumerator.
-
-Author:
-
-Environment:
-
-    kernel mode only
-
-Notes:
-
-
-Revision History:
-
-
---*/
 #include <ntddk.h>
 #include <wmilib.h> // required for WMILIB_CONTEXT
 #include <initguid.h> // required for GUID definitions
@@ -438,6 +412,8 @@ DRIVER_DISPATCH Bus_SendIrpSynchronously;
 __drv_dispatchType(IRP_MJ_PNP)
 DRIVER_DISPATCH Bus_PnP;
 
+IO_COMPLETION_ROUTINE Bus_CompletionRoutine;
+
 NTSTATUS
 Bus_CompletionRoutine(
     __in PDEVICE_OBJECT   DeviceObject,
@@ -633,6 +609,8 @@ Bus_WmiDeRegistration (
 __drv_dispatchType(IRP_MJ_SYSTEM_CONTROL)
 DRIVER_DISPATCH Bus_SystemControl;
 
+WMI_SET_DATAITEM_CALLBACK Bus_SetWmiDataItem;
+
 NTSTATUS
 Bus_SetWmiDataItem(
     __in PDEVICE_OBJECT DeviceObject,
@@ -644,6 +622,8 @@ Bus_SetWmiDataItem(
     __in_bcount(BufferSize) PUCHAR Buffer
     );
 
+WMI_SET_DATABLOCK_CALLBACK Bus_SetWmiDataBlock;
+	
 NTSTATUS
 Bus_SetWmiDataBlock(
     __in PDEVICE_OBJECT DeviceObject,
@@ -653,6 +633,8 @@ Bus_SetWmiDataBlock(
     __in ULONG BufferSize,
     __in_bcount(BufferSize) PUCHAR Buffer
     );
+
+WMI_QUERY_DATABLOCK_CALLBACK Bus_QueryWmiDataBlock;
 
 NTSTATUS
 Bus_QueryWmiDataBlock(
@@ -666,6 +648,8 @@ Bus_QueryWmiDataBlock(
     __out_bcount(BufferAvail) PUCHAR Buffer
     );
 
+WMI_QUERY_REGINFO_CALLBACK Bus_QueryWmiRegInfo;
+	
 NTSTATUS
 Bus_QueryWmiRegInfo(
     __in PDEVICE_OBJECT DeviceObject,

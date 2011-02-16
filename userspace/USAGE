@@ -8,9 +8,23 @@ To install the virtual usb bus driver on Windows XP:
 6. Select 'Install the hardware that I manually select from a list(Advanced)', and then click next.
 7. Select 'System Devices', then click Next.
 8. Click 'Have Disk', click 'Browse', choose the uncompressed directory, and click OK.
-9. Click on the 'Virtual USB Bus Enumerator', and then click Next.
+9. Click on the 'USB/IP Enumerator', and then click Next.
 10. At 'The wizard is ready to install your hardware', click Next.
 11. Click Finish at 'Completing the Add/Remove Hardware Wizard.' 
+
+For Window 7 :
+1. For x64 allow unsigned drivers: Enter "bcdedit /set testsigning on" in an administrative cmd window
+2. Uncompress the downloaded binary package to a directory.
+3. Start a the Device Manager
+4. Click Any hardware node
+5. Choose "Add Legacy Hardware" from the "Action" menu
+6. At the 'Welcome to the Add Hardware Wizard', click 'Next'.
+7. Select 'Install the hardware that I manually select from the list'
+8. click 'Next'
+9. Click 'Have Disk', click 'Browse', choose the uncompressed directory, and click OK.
+10. Click on the 'USB/IP Enumerator', and then click Next.
+11. At 'The wizard is ready to install your hardware', click Next.
+12. Click Finish at 'Completing the Add/Remove Hardware Wizard.' 
 
 To use it:
 

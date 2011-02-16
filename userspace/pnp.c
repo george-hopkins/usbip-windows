@@ -1,35 +1,3 @@
-/*++
-
-Copyright (c) Microsoft Corporation.  All rights reserved.
-
-    THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY
-    KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-    IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR
-    PURPOSE.
-
-Module Name:
-
-    PNP.C
-
-Abstract:
-
-    This module handles plug & play calls for the toaster bus controller FDO.
-
-Author:
-
-
-Environment:
-
-    kernel mode only
-
-Notes:
-
-
-Revision History:
-
-
---*/
-
 #include "busenum.h"
 #include <wdmsec.h> // for IoCreateDeviceSecure
 
@@ -1030,6 +998,7 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
     PLIST_ENTRY le;
     KIRQL oldirql;
     int count=0;
+	LARGE_INTEGER interval;
 
     //FIXME
     KdPrint(("finish pending irp"));
@@ -1052,7 +1021,8 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 	if(count>2){
 		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
 		KdPrint(("sleep 50ms, let pnp manager send irp"));
-		KeDelayExecutionThread(KernelMode, FALSE, -500000);
+		interval.QuadPart=-500000;
+		KeDelayExecutionThread(KernelMode, FALSE, &interval);
 		KeRaiseIrql(DISPATCH_LEVEL, &oldirql);
 	} else {
 		KeReleaseSpinLock(&pdodata->q_lock, DISPATCH_LEVEL);
@@ -1067,7 +1037,7 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 NTSTATUS
 Bus_DestroyPdo (
     PDEVICE_OBJECT      Device,
-    PPDO_DEVICE_DATA    PdoData
+    __in PPDO_DEVICE_DATA    PdoData
     )
 /*++
 Routine Description:
@@ -1120,7 +1090,7 @@ Routine Description:
 
 void
 bus_init_pdo (
-    PDEVICE_OBJECT      pdo,
+    __out PDEVICE_OBJECT      pdo,
     PFDO_DEVICE_DATA    fdodata
     )
 {
@@ -1266,12 +1236,14 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
 	   len = sizeof(COMPATIBLE_IDS_TPL);
     pdodata->compatible_ids =
             ExAllocatePoolWithTag (NonPagedPool, len, BUSENUM_POOL_TAG);
-    RtlZeroMemory(pdodata->compatible_ids, len);
-    if (NULL == pdodata->compatible_ids) {
-	ExFreePool(pdodata->HardwareIDs);
+    
+	if (NULL == pdodata->compatible_ids) {
+		ExFreePool(pdodata->HardwareIDs);
         IoDeleteDevice(pdo);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    RtlZeroMemory(pdodata->compatible_ids, len);
+
     pdodata->compatible_ids_len = len;
     RtlStringCchPrintfW(pdodata->compatible_ids, len/sizeof(wchar_t),
 		(plugin->inum>1)?COMPATIBLE_COMPOSITE_IDS_TPL:COMPATIBLE_IDS_TPL,
@@ -1282,7 +1254,7 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
 	    if('Z'==pdodata->compatible_ids[i])
 		    pdodata->compatible_ids[i]=0;
     }
-    old_pdodata = (PPDO_DEVICE_DATA) InterlockedCompareExchange(&((LONG)fo->FsContext), (LONG) pdodata, 0);
+    old_pdodata = (PPDO_DEVICE_DATA) InterlockedCompareExchangePointer(&(fo->FsContext), pdodata, 0);
     if(old_pdodata){
 	    KdPrint(("you can't plugin again"));
 	    ExFreePool(pdodata->HardwareIDs);

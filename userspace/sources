@@ -1,4 +1,4 @@
-TARGETNAME=BusEnum
+TARGETNAME=USBIPEnum
 TARGETTYPE=DRIVER
 
 INCLUDES = ..\inc
@@ -12,8 +12,8 @@ TARGETLIBS=  $(DDK_LIB_PATH)\wdmsec.lib \
 SOURCES= busenum.rc \
          busenum.c \
          pnp.c \
-	 power.c \
+		 power.c \
          buspdo.c \
-	 wmi.c
+		 wmi.c
 
 _NT_TARGET_VERSION=$(_NT_TARGET_VERSION_WINXP)

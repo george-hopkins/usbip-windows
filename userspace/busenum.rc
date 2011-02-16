@@ -4,9 +4,13 @@
 
 #define VER_FILETYPE    VFT_DLL
 #define VER_FILESUBTYPE VFT2_UNKNOWN
-#define VER_FILEDESCRIPTION_STR     "Virtual USB Bus Enumerator"
-#define VER_INTERNALNAME_STR        "busenum.sys"
-#define VER_ORIGINALFILENAME_STR    "busenum.sys"
+#define VER_FILEDESCRIPTION_STR     "USB/IP Enumerator"
+#define VER_INTERNALNAME_STR        "USBIPEnum.sys"
+#define VER_ORIGINALFILENAME_STR    "USBIPEnum.sys"
+#define VER_PRODUCTVERSION 0.1.0.0
+#define VER_PRODUCTVERSION_STR "0.1.0.0"
+#define VER_LEGALCOPYRIGHT_STR "Open Source Software"
+#define VER_PRODUCTNAME_STR "USB/IP"
 
 #include "common.ver"
 
