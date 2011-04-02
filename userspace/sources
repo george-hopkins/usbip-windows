@@ -16,4 +16,4 @@ SOURCES= busenum.rc \
          buspdo.c \
 		 wmi.c
 
-_NT_TARGET_VERSION=$(_NT_TARGET_VERSION_WINXP)
+#_NT_TARGET_VERSION=$(_NT_TARGET_VERSION_WINXP)

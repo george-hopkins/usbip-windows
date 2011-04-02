@@ -519,11 +519,11 @@ Return Value:
     deviceCapabilities->HardwareDisabled = FALSE;
 
     //
-    // Out simulated device can be physically removed.
+    // Our simulated device can be physically removed.
     //
     deviceCapabilities->Removable = TRUE;
     //
-    // Setting it to TURE prevents the warning dialog from appearing
+    // Setting it to TRUE prevents the warning dialog from appearing
     // whenever the device is surprise removed.
     //
     deviceCapabilities->SurpriseRemovalOK = TRUE;
@@ -615,12 +615,12 @@ Return Value:
 	#define DEVICEE_ID_SAMPLE L"USB\\Vid_1234&Pid_1234"
 
 	length = sizeof(DEVICEE_ID_SAMPLE);
-        buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
-        if (!buffer) {
-           status = STATUS_INSUFFICIENT_RESOURCES;
-           break;
-        }
-        RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
+    buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
+    if (!buffer) {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        break;
+    }
+    RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
 	*(unsigned short *)((char *)buffer+length -2)=0;
 	KdPrint(("dev id:%LS\r\n", buffer));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
@@ -648,16 +648,16 @@ Return Value:
 
 	#define HARDWARE_IDS_SAMPLE L"USB\\Vid_1234&Pid_1234&Rev_1234\0USB\\Vid_1234&Pid_1234\0"
 
-        length = sizeof(HARDWARE_IDS_SAMPLE);
-        buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
-        if (!buffer) {
-           status = STATUS_INSUFFICIENT_RESOURCES;
-           break;
-        }
-        RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
-	KdPrint(("hid:%LS\r\n", buffer));
-        Irp->IoStatus.Information = (ULONG_PTR) buffer;
-        break;
+		length = sizeof(HARDWARE_IDS_SAMPLE);
+		buffer = ExAllocatePoolWithTag (PagedPool, length, BUSENUM_POOL_TAG);
+		if (!buffer) {
+			status = STATUS_INSUFFICIENT_RESOURCES;
+			break;
+		}
+		RtlCopyMemory (buffer, DeviceData->HardwareIDs, length);
+		KdPrint(("hid:%LS\r\n", buffer));
+		Irp->IoStatus.Information = (ULONG_PTR) buffer;
+		break;
 
     case BusQueryCompatibleIDs:
 
@@ -672,11 +672,14 @@ Return Value:
            break;
         }
         RtlCopyMemory (buffer, DeviceData->compatible_ids,
-			DeviceData->compatible_ids_len);
-	KdPrint(("cid:%LS\r\n", buffer));
+		DeviceData->compatible_ids_len);
+		KdPrint(("cid:%LS\r\n", buffer));
         Irp->IoStatus.Information = (ULONG_PTR) buffer;
         break;
-
+	case BusQueryContainerID:
+		// new for Windows 7
+		status=STATUS_NOT_SUPPORTED;
+        break;
     default:
 
         status = Irp->IoStatus.Status;
@@ -777,10 +780,10 @@ Return Value:
                     break;
                 }
 
-                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"China");
+                RtlStringCchPrintfW(buffer, length/sizeof(WCHAR), L"on USB/IP Enumerator");
 
                 Bus_KdPrint_Cont (DeviceData, BUS_DBG_PNP_TRACE,
-                    ("\tDeviceTextDescription :%ws\n", buffer));
+                    ("\tDeviceTextLocationInformation :%ws\n", buffer));
 
                 Irp->IoStatus.Information = (ULONG_PTR) buffer;
             }
@@ -1207,7 +1210,7 @@ Bus_PDO_QueryInterface(
    KdPrint(("Query GUID: %s\n",buf));
 
    if (!IsEqualGUID(interfaceType, (PVOID) &USB_BUS_INTERFACE_USBDI_GUID)){
-	KdPrint(("Query unknown interface GUID:"));
+	KdPrint(("Query unknown interface GUID:\n"));
         return Irp->IoStatus.Status;
    }
    size = irpStack->Parameters.QueryInterface.Size;

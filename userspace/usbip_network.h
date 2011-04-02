@@ -4,9 +4,6 @@
 
 #ifndef _USBIP_NETWORK_H
 #define _USBIP_NETWORK_H
-#include <stdint.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 
 ssize_t usbip_recv(int sockfd, void *buff, size_t bufflen);
 ssize_t usbip_send(int sockfd, void *buff, size_t bufflen);

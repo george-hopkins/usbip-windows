@@ -11,6 +11,8 @@
 
 void dump_usb_interface(struct usb_interface *);
 void dump_usb_device(struct usb_device *);
+void usbip_dump_buffer(unsigned char *buff, int bufflen);
+
 int read_usb_interface(struct usb_device *udev, int i, struct usb_interface *uinf);
 
 const char *usbip_speed_string(int num);

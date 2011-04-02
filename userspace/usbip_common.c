@@ -1,10 +1,10 @@
 /*
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
  */
+#include "usbip.h"
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "usbip.h"
 
 struct speed_string {
 	int num;
@@ -83,7 +83,7 @@ void usbip_names_get_product(char *buff, size_t size, uint16_t vendor, uint16_t 
 	const char *prod, *vend;
 	prod = "unknown product";
 	vend = "unknown vendor";
-	snprintf(buff, size, "%s : %s (%04x:%04x)", vend, prod, vendor, product);
+	_snprintf(buff, size, "%s : %s (%04x:%04x)", vend, prod, vendor, product);
 }
 
 void usbip_names_get_class(char *buff, size_t size, uint8_t class, uint8_t subclass, uint8_t protocol)
@@ -91,12 +91,12 @@ void usbip_names_get_class(char *buff, size_t size, uint8_t class, uint8_t subcl
 	const char *c, *s, *p;
 
 	if (class == 0 && subclass == 0 && protocol == 0) {
-		snprintf(buff, size, "(Defined at Interface level) (%02x/%02x/%02x)", class, subclass, protocol);
+		_snprintf(buff, size, "(Defined at Interface level) (%02x/%02x/%02x)", class, subclass, protocol);
 		return;
 	}
 
 	p = "unknown protocol";
 	s = "unknown subclass";
 	c = "unknown class";
-	snprintf(buff, size, "%s / %s / %s (%02x/%02x/%02x)", c, s, p, class, subclass, protocol);
+	_snprintf(buff, size, "%s / %s / %s (%02x/%02x/%02x)", c, s, p, class, subclass, protocol);
 }

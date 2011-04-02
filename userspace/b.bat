@@ -5,15 +5,23 @@ rem build 64-bit version in Windows Server 2003 environment
 
 set OCD=%CD%
 
-cmd /C "set DDKBUILDENV=&& %NTMAKEENV%/setenv %BASEDIR% fre WXP && cd /d %OCD% && build"
-cmd /C "set DDKBUILDENV=&& %NTMAKEENV%/setenv %BASEDIR% fre x64 WNET && cd /d %OCD% && build"
+set TYPE=chk
+
+IF "%BASEDIR%"=="" (
+set BASEDIR=D:\WinDDK\7600.16385.1
+CALL D:\WinDDK\7600.16385.1\bin\setenv.bat D:\WinDDK\7600.16385.1 %TYPE%     WLH
+cd /d %OCD%
+)
+
+cmd /C "set DDKBUILDENV=&& %BASEDIR%\bin\setenv.bat %BASEDIR% %TYPE%     WLH && cd /d %OCD% && build"
+cmd /C "set DDKBUILDENV=&& %BASEDIR%\bin\setenv.bat %BASEDIR% %TYPE% x64 WLH && cd /d %OCD% && build"
 
 rem copy files to output folder
-del /Q output
+rem del /Q output
 mkdir output
 copy USBIPEnum.inf output
-copy objfre_wxp_x86\i386\USBIPEnum.sys output\USBIPEnum_x86.sys
-copy objfre_wnet_amd64\amd64\USBIPEnum.sys output\USBIPEnum_x64.sys
+copy obj%TYPE%_wlh_x86\i386\USBIPEnum.sys output\USBIPEnum_x86.sys
+copy obj%TYPE%_wlh_amd64\amd64\USBIPEnum.sys output\USBIPEnum_x64.sys
 
 rem sign files and create catalog file
 signtool sign /f USBIP_TestCert.pfx /t http://timestamp.verisign.com/scripts/timestamp.dll output\USBIPEnum_x86.sys

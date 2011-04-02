@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{104306E1-1D27-4B28-88FF-F4B3934A1CD5}"
+	ProjectSection(SolutionItems) = preProject
+		Todo.txt = Todo.txt
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "usbip", "usbip.vcxproj", "{36CEE68D-D6CF-4413-978C-794488F44555}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "usbip_driver", "usbip_driver.vcxproj", "{E1717B58-E306-41BA-AE41-A7D60E0C9DA5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{36CEE68D-D6CF-4413-978C-794488F44555}.Debug|Win32.ActiveCfg = Debug|Win32
+		{36CEE68D-D6CF-4413-978C-794488F44555}.Debug|Win32.Build.0 = Debug|Win32
+		{36CEE68D-D6CF-4413-978C-794488F44555}.Release|Win32.ActiveCfg = Release|Win32
+		{36CEE68D-D6CF-4413-978C-794488F44555}.Release|Win32.Build.0 = Release|Win32
+		{E1717B58-E306-41BA-AE41-A7D60E0C9DA5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{E1717B58-E306-41BA-AE41-A7D60E0C9DA5}.Debug|Win32.Build.0 = Debug|Win32
+		{E1717B58-E306-41BA-AE41-A7D60E0C9DA5}.Release|Win32.ActiveCfg = Release|Win32
+		{E1717B58-E306-41BA-AE41-A7D60E0C9DA5}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

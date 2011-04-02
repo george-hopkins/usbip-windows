@@ -7,8 +7,6 @@
 #define WINVER 0x0501
 #include "usbip.h"
 
-void dbg_file(char *fmt, ...);
-
 void pack_uint32_t(int pack, uint32_t *num)
 {
 	uint32_t i;
@@ -49,33 +47,74 @@ void pack_usb_interface(int pack, struct usb_interface *udev)
 	/* uint8_t members need nothing */
 }
 
+void usbip_dump_buffer(unsigned char *buff, int bufflen)
+{
+	int i,j;
+	char linebuf[80];
+	int pos=0;
+
+	for (i=0; i<bufflen; i+=16)
+	{
+		pos+=sprintf(linebuf+pos,"%8i: ",i);
+		for (j=i; j<i+16; j++)
+		{
+			if (j<bufflen)
+				pos+=sprintf(linebuf+pos,"%02X ",(int)(buff)[j]);
+			else
+				pos+=sprintf(linebuf+pos,"   ");
+		}
+		for (j=i; j<i+16; j++)
+		{
+			if (j<bufflen)
+				pos+=sprintf(linebuf+pos,"%c",(buff[j]>=32&&buff[j]<128)?((char*)buff)[j]:'.');
+			else
+				pos+=sprintf(linebuf+pos," ");
+		}
+		pos+=sprintf(linebuf+pos,"\n");
+		dbg_file("%s",linebuf);
+//		printk(KERN_DEBUG "%s",linebuf);
+		pos=0;
+	}
+
+}
 
 static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 {
 	ssize_t total = 0;
+#ifdef DEBUG
+	void * orgbuf=buff;
+#endif
 
 	if (!bufflen)
 		return 0;
-	dbg_file("do %d: len:%d\n", sending, bufflen);
+//	dbg_file("do %d: len:%d\n", sending, bufflen);
 
 	do {
 		ssize_t nbytes;
 
 		if (sending)
+		{
 			nbytes = send(sockfd, buff, bufflen, 0);
+		}
 		else
+		{
 			nbytes = recv(sockfd, buff, bufflen, 0);
+			dbg_file("Number of bytes received from socket synchronously: %d\n",nbytes);
+		}
 
 		if (nbytes <= 0)
 			return -1;
 
-		buff	= buff + nbytes;
+		buff	= (void *)((char *)buff + nbytes);
 		bufflen	-= nbytes;
 		total	+= nbytes;
 
 	} while (bufflen > 0);
 
-	dbg_file("do %d: len:%d finish\n", sending, bufflen);
+#ifdef DEBUG
+	usbip_dump_buffer(orgbuf,total);
+#endif
+//	dbg_file("do %d: len:%d finish\n", sending, bufflen);
 
 	return total;
 }

@@ -13,7 +13,7 @@ To install the virtual usb bus driver on Windows XP:
 11. Click Finish at 'Completing the Add/Remove Hardware Wizard.' 
 
 For Window 7 :
-1. For x64 allow unsigned drivers: Enter "bcdedit /set testsigning on" in an administrative cmd window
+1. (Only necessary for custom builds: For x64 allow unsigned drivers: Enter "bcdedit /set testsigning on" in an administrative cmd window)
 2. Uncompress the downloaded binary package to a directory.
 3. Start a the Device Manager
 4. Click Any hardware node

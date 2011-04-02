@@ -1,22 +1,14 @@
-#include <basetyps.h>
-#include <stdlib.h>
-#include <wtypes.h>
-#include <setupapi.h>
-#include <initguid.h>
-#include <stdio.h>
-#include <string.h>
-#include <winioctl.h>
-#include <ctype.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define _GNU_SOURCE
-#include <getopt.h>
+/*
+	$Id$
+*/
 #include "usbip.h"
+#include "getopt.h"
+#define _GNU_SOURCE
 
-static const char version[] = "usbip for windows 0.001 by ytht.net@gmail.com";
+static const char version[] = "usbip for windows ($Id$)";
 
-int usbip_use_debug=1;
-int usbip_use_syslog;
+int usbip_use_debug=0;
+int usbip_use_syslog=0;
 int usbip_use_stderr=1;
 
 static const struct option longopts[] = {
@@ -116,7 +108,7 @@ static int query_interface0(SOCKET sockfd, char * busid, struct usb_interface * 
 	int ret;
 	struct op_devlist_reply rep;
 	uint16_t code = OP_REP_DEVLIST;
-	int i,j;
+	uint32_t i,j;
 	char product_name[100];
 	char class_name[100];
 	struct usb_device udev;
@@ -213,16 +205,16 @@ static int import_device(int sockfd, struct usb_device *udev,
 		return -1;
 	}
 
-	info("call from attch here\n");
+	dbg("call from attch here\n");
 	ret = usbip_vbus_attach_device(fd, port, udev, uinf0);
-	info("return from attch here\n");
+	dbg("return from attch here\n");
 
 	if (ret < 0) {
 		err("import device");
 		CloseHandle(fd);
 		return -1;
 	}
-	info("devfd:%p\n",devfd);
+	dbg("devfd:%p\n",devfd);
 	*devfd=fd;
 
 	return port;
@@ -295,7 +287,7 @@ static void attach_device(char * host, char * busid)
 		return;
 	}
 	if(query_interface0(sockfd, busid, &uinf)){
-		err("can't found device");
+		err("cannot find device");
 		return;
 	}
 	closesocket(sockfd);
@@ -311,8 +303,17 @@ static void attach_device(char * host, char * busid)
 	}
 	info("new usb device attached to usbvbus port %d\n", rhport);
 	usbip_vbus_forward(sockfd, devfd);
-	closesocket(sockfd);
+	
+	dbg("closing connection to device");
 	CloseHandle(devfd);
+
+	dbg("detaching device");
+	usbip_vbus_detach_device(devfd,rhport);
+
+	dbg("closing connection to peer");
+	closesocket(sockfd);
+
+	dbg("done");
 	return;
 }
 
@@ -394,7 +395,7 @@ static int query_exported_devices(SOCKET sockfd)
 	int ret;
 	struct op_devlist_reply rep;
 	uint16_t code = OP_REP_DEVLIST;
-	int i,j;
+	uint32_t i,j;
 	char product_name[100];
 	char class_name[100];
 	struct usb_device udev;
@@ -492,6 +493,7 @@ int
 main(int argc, char *argv[])
 {
 	int cmd;
+	info("%s\n",version);
 
 	if(init_winsock()){
 		err("can't init winsock");

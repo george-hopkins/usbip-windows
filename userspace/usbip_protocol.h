@@ -4,9 +4,12 @@
 
 #ifndef _USBIP_PROTOCOL_H
 #define _USBIP_PROTOCOL_H
-
-#include <stdint.h>
-
+#pragma pack(push,1)
+#ifdef __GNUC__
+#define __attribute__(x) __attribute__(x)
+#else
+#define __attribute__(x) /* x */
+#endif
 #define USBIP_VERSION 0x000106
 
 /* -------------------------------------------------- */
@@ -50,6 +53,7 @@ struct op_common {
 
 #define USBIP_BUS_ID_SIZE 32
 #define USBIP_DEV_PATH_MAX 256
+
 
 struct op_devinfo_request {
 	char busid[USBIP_BUS_ID_SIZE];
@@ -175,7 +179,7 @@ struct op_crypkey_request {
 } __attribute__((packed));
 
 struct op_crypkey_reply {
-	uint32_t __reserved;
+	uint32_t _reserved;
 } __attribute__((packed));
 
 
@@ -186,6 +190,7 @@ struct op_crypkey_reply {
 #define OP_REP_DEVLIST	(OP_REPLY   | OP_DEVLIST)
 
 struct op_devlist_request {
+	uint32_t _reserved;
 } __attribute__((packed));
 
 struct op_devlist_reply {
@@ -323,4 +328,5 @@ void pack_usb_interface(int pack, struct usb_interface *uinf);
 #define USBIP_PORT 3240
 #define USBIP_PORT_STRING "3240"
 
+#pragma pack(pop)
 #endif

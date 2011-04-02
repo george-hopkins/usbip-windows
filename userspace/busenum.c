@@ -70,7 +70,7 @@ Return Value:
     }
 
 
-    KdPrint(("ReistryPath %p\r\n", RegistryPath));
+    KdPrint(("RegistryPath %p\r\n", RegistryPath));
     RtlCopyUnicodeString(&Globals.RegistryPath, RegistryPath);
 
     //
@@ -286,6 +286,9 @@ static void copy_iso_data(char *dest, ULONG dest_len,
 	ULONG offset;
 	offset=0;
 	for(i=0;i<urb->NumberOfPackets;i++){
+
+//		KdPrint(("ISO Packet: [%d] len: %d stat: %d off: %d\n",i,urb->IsoPacket[i].Length,urb->IsoPacket[i].Status,urb->IsoPacket[i].Offset));
+		
 		if(!urb->IsoPacket[i].Length)
 			continue;
 
@@ -352,12 +355,16 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	}
     }
     KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-    if(!found){
-	    KdPrint(("can't found %d\n", h->base.seqnum));
-	    return STATUS_INVALID_PARAMETER;
+
+	irp->IoStatus.Information = len;
+    
+	if(!found){
+	    KdPrint(("Cannot find urb with seqnum %d\n", h->base.seqnum));
+// Might have been cancelled before, so return STATUS_SUCCES
+		return STATUS_SUCCESS;
+//	    return STATUS_INVALID_PARAMETER;
     }
     ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-    irp->IoStatus.Information = len;
     irpstack = IoGetCurrentIrpStackLocation(ioctl_irp);
     if(!send){
 	    KdPrint(("Warning, recv not send"));
@@ -424,7 +431,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	goto end;
     }
     if(in)
-	in_len= h->u.ret_submit.actual_length;
+		in_len= h->u.ret_submit.actual_length;
     if(type == USB_ENDPOINT_TYPE_ISOCHRONOUS){
 	    if(h->u.ret_submit.number_of_packets !=
 		urb->NumberOfPackets){
@@ -443,9 +450,9 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 	goto end;
     }
     if(iso_len){
-	    ip_desc = (struct usbip_iso_packet_descriptor *)
-		    ((char *)(h+1) + in_len);
+	    ip_desc = (struct usbip_iso_packet_descriptor *)((char *)(h+1) + in_len);
 	    for(i=0; i<urb->NumberOfPackets; i++){
+	//	    KdPrint(("ISO: %d %d %d %d %d\n",	i,	ip_desc->offset, ip_desc->length, ip_desc->actual_length, ip_desc->status ));
 		    if(ip_desc->offset > urb->IsoPacket[i].Offset){
 			    KdPrint(("Warning, why offset changed?%d %d %d %d\n",
 				i,
@@ -471,7 +478,7 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		urb->TransferBufferMDL,
 		NormalPagePriority);
 	} else
-		KdPrint(("No transferbuffer fo in\n"));
+		KdPrint(("No transferbuffer for in\n"));
 	if(NULL==buf){
 		ioctl_status = STATUS_INSUFFICIENT_RESOURCES;
 		goto end;
@@ -489,14 +496,19 @@ int process_write_irp(PPDO_DEVICE_DATA pdodata, PIRP irp)
 		try_save_config(pdodata, (struct _URB_CONTROL_DESCRIPTOR_REQUEST *)urb, in_len);
     }
     urb->Hdr.Status = tran_usb_status(h->u.ret_submit.status, in, type);
-    KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d\n", urb->Hdr.Function,
+
+	KdPrint(("Sucess Finish URB FUNC:%d %s %s len:%d ret:%d #p:%d #p ret:%d\n", urb->Hdr.Function,
 				func2name(urb->Hdr.Function),
 				in?"in":"out", urb->TransferBufferLength,
-				h->u.ret_submit.actual_length));
+				h->u.ret_submit.actual_length,
+				urb->NumberOfPackets,
+				h->u.ret_submit.number_of_packets
+				));
     urb->TransferBufferLength = h->u.ret_submit.actual_length;
     ioctl_status = STATUS_SUCCESS;
 end:
-    ioctl_irp->IoStatus.Status = ioctl_status;
+	if (ioctl_irp)
+		ioctl_irp->IoStatus.Status = ioctl_status;
     /* it seems windows client usb driver will think
      * IoCompleteRequest is running at DISPATCH_LEVEL
      * so without this it will change IRQL sometimes,
@@ -527,7 +539,7 @@ Bus_Write (
     if (!commonData->IsFDO) {
         Irp->IoStatus.Status = status = STATUS_INVALID_DEVICE_REQUEST;
         IoCompleteRequest (Irp, IO_NO_INCREMENT);
-	KdPrint(("Write return not fd\n"));
+		KdPrint(("Write return not fd\n"));
         return status;
     }
 
@@ -578,14 +590,14 @@ void set_cmd_submit_usbip_header(struct usbip_header *h,
 {
 	h->base.command   = RtlUlongByteSwap(USBIP_CMD_SUBMIT);
 	h->base.seqnum    = RtlUlongByteSwap(seqnum);
-        h->base.devid     = RtlUlongByteSwap(devid);
+	h->base.devid     = RtlUlongByteSwap(devid);
 	h->base.direction = RtlUlongByteSwap(direct?USBIP_DIR_IN:USBIP_DIR_OUT);
 	h->base.ep        = RtlUlongByteSwap(pipe2addr(pipe));
 	h->u.cmd_submit.transfer_flags = transflag(flags);
-        h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
-        h->u.cmd_submit.start_frame = 0;
-        h->u.cmd_submit.number_of_packets = 0;
-        h->u.cmd_submit.interval = RtlUlongByteSwap(pipe2interval(pipe));
+	h->u.cmd_submit.transfer_buffer_length = RtlUlongByteSwap(len);
+	h->u.cmd_submit.start_frame = 0;
+	h->u.cmd_submit.number_of_packets = 0;
+	h->u.cmd_submit.interval = RtlUlongByteSwap(pipe2interval(pipe));
 }
 
 struct usb_ctrl_setup {
@@ -629,11 +641,24 @@ int prepare_reset_dev(char *buf, int len,  ULONG_PTR *copied, unsigned long seqn
 		unsigned int devid)
 {
 	struct usbip_header * h = (struct usbip_header * ) buf;
+	struct usb_ctrl_setup * setup=(struct usb_ctrl_setup *)h->u.cmd_submit.setup;
+	int in=0;
+	*copied = 0;
+
+	CHECK_SIZE_READ
+
 	set_cmd_submit_usbip_header (h,
 		seqnum, devid,
 		0, 0,
 		0, 0);
-	h->base.command = RtlUlongByteSwap(USBIP_RESET_DEV);
+
+	build_setup_packet(setup,
+	0,
+	BMREQUEST_CLASS, BMREQUEST_TO_OTHER, USB_REQUEST_SET_FEATURE);
+	setup->wLength = 0;
+	setup->wValue = 4; // Reset
+	setup->wIndex = 0;
+
 	*copied=sizeof(*h);
 	return  STATUS_SUCCESS;
 }
@@ -1035,33 +1060,33 @@ int process_read_irp(PPDO_DEVICE_DATA pdodata, PIRP read_irp)
     for (le = pdodata->ioctl_q.Flink;
 		    le !=&pdodata->ioctl_q;
 		    le = le->Flink){
-	urb_r = CONTAINING_RECORD(le, struct urb_req, list);
-	if(urb_r->send==0){
-		ioctl_irp=urb_r->irp;
-		seq_num = ++(pdodata->seq_num);
-		urb_r->send=1;
-		old_seq_num = urb_r->seq_num;
-		urb_r->seq_num = seq_num;
-		break;
-	}
+		urb_r = CONTAINING_RECORD(le, struct urb_req, list);
+		if(urb_r->send==0){
+			ioctl_irp=urb_r->irp;
+			seq_num = ++(pdodata->seq_num);
+			urb_r->send=1;
+			old_seq_num = urb_r->seq_num;
+			urb_r->seq_num = seq_num;
+			break;
+		}
     }
     if(NULL==ioctl_irp){
-	if(pdodata->pending_read_irp)
-		status = STATUS_INVALID_DEVICE_REQUEST;
-	else{
-		IoMarkIrpPending(read_irp);
-		pdodata->pending_read_irp = read_irp;
-	}
-	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	return status;
+		if(pdodata->pending_read_irp)
+			status = STATUS_INVALID_DEVICE_REQUEST;
+		else{
+			IoMarkIrpPending(read_irp);
+			pdodata->pending_read_irp = read_irp;
+		}
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		return status;
     }
     if(old_seq_num)
 	    KdPrint(("Error, why old_seq_num %d\n", old_seq_num));
     KdPrint(("get a ioctl_irp %p %d\n", ioctl_irp, seq_num));
     status = set_read_irp_data(read_irp, ioctl_irp, seq_num, pdodata->devid);
     if(status == STATUS_SUCCESS||!IoSetCancelRoutine(ioctl_irp, NULL)){
-	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	return status;
+		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		return status;
     }
     /* set_read_irp failed, we must complete ioctl_irp */
     RemoveEntryList (le);
@@ -1112,19 +1137,19 @@ Bus_Read (
     stackirp = IoGetCurrentIrpStackLocation(Irp);
     pdodata = stackirp->FileObject->FsContext;
     if(NULL==pdodata||pdodata->Present == FALSE){
-	status = STATUS_INVALID_DEVICE_REQUEST;
-	goto END;
+		status = STATUS_INVALID_DEVICE_REQUEST;
+		goto END;
     }
     if(pdodata->pending_read_irp){
-	status = STATUS_INVALID_PARAMETER;
-	goto END;
+		status = STATUS_INVALID_PARAMETER;
+		goto END;
     }
     status = process_read_irp(pdodata, Irp);
 END:
     KdPrint(("Read return:0x%08x\n", status));
     if(status != STATUS_PENDING){
-	Irp->IoStatus.Status = status;
-	IoCompleteRequest (Irp, IO_NO_INCREMENT);
+		Irp->IoStatus.Status = status;
+		IoCompleteRequest (Irp, IO_NO_INCREMENT);
     }
     Bus_DecIoCount (fdoData);
     return status;
@@ -1346,8 +1371,7 @@ void set_pipe(PUSBD_PIPE_INFORMATION pipe,
 	pipe->Interval = ep_desc->bInterval;
 	pipe->PipeType = ep_desc->bmAttributes & USB_ENDPOINT_TYPE_MASK;
 	/* From usb_submit_urb in linux */
-	if(pipe->PipeType==USB_ENDPOINT_TYPE_ISOCHRONOUS
-		&&speed==USB_SPEED_HIGH){
+	if(pipe->PipeType==USB_ENDPOINT_TYPE_ISOCHRONOUS && speed==USB_SPEED_HIGH){
 		mult = 1 + ((pipe->MaximumPacketSize >> 11) & 0x03);
 		pipe->MaximumPacketSize &= 0x7ff;
 		pipe->MaximumPacketSize *= mult;
@@ -1375,10 +1399,10 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 		return STATUS_INVALID_PARAMETER;
 	}
 	KdPrint(("config handle:%08x\n", req->ConfigurationHandle));
-	KdPrint(("interface: len:%d int num:%d"
-	         "AlternateSetting:%d"
-		  "class:%d subclass:%d"
-		"protocol:%d handle:%08x numerofpipes:%d",
+	KdPrint(("interface: len:%d int num:%d "
+				"AlternateSetting:%d "
+				"class:%d subclass:%d "
+				"protocol:%d handle:%08x # pipes:%d\n",
 		intf->Length,
 		intf->InterfaceNumber,
 		intf->AlternateSetting,
@@ -1388,8 +1412,7 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 		intf->InterfaceHandle,
 		intf->NumberOfPipes));
 
-	i=(intf->Length +sizeof(intf->Pipes[0]) - sizeof(*intf))/
-			sizeof(intf->Pipes[0]);
+	i=(intf->Length +sizeof(intf->Pipes[0]) - sizeof(*intf))/sizeof(intf->Pipes[0]);
 	if(i<intf->NumberOfPipes){
 		KdPrint(("Warning, why space is so small?"));
 		return STATUS_INVALID_PARAMETER;
@@ -1414,8 +1437,12 @@ int post_select_interface(PPDO_DEVICE_DATA pdodata,
 	}
 	for(i=0; i<intf->NumberOfPipes;i++){
 		show_pipe(i, &intf->Pipes[i]);
+/*	Removed Check AM: 20110319: check causes usbstor.sys under Windows Vista and higher to fail.
 		if(intf->Pipes[i].MaximumTransferSize > 65536)
+		{
+			KdPrint("Maximum transfer size %d larger then 65536\n",intf->Pipes[i].MaximumTransferSize);
 			return STATUS_INVALID_PARAMETER;
+		}*/
 		ep_desc = seek_to_next_desc(
 			(PUSB_CONFIGURATION_DESCRIPTOR)pdodata->dev_config,
 			&offset, USB_ENDPOINT_DESCRIPTOR_TYPE);
@@ -1553,8 +1580,7 @@ int proc_urb(PPDO_DEVICE_DATA pdodata, void *arg)
 		KdPrint(("null arg"));
 		return STATUS_INVALID_PARAMETER;
 	}
-	KdPrint(("URB FUNC:%d %s\n", urb->UrbHeader.Function,
-				func2name(urb->UrbHeader.Function)));
+	KdPrint(("URB FUNC:%d %s\n", urb->UrbHeader.Function, func2name(urb->UrbHeader.Function)));
 	switch (urb->UrbHeader.Function){
 		case URB_FUNCTION_SELECT_CONFIGURATION:
 			KdPrint(("select configuration\n"));
@@ -1599,7 +1625,7 @@ void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
 
 	pdodata = (PPDO_DEVICE_DATA) pdo->DeviceExtension;
 //	IoReleaseCancelSpinLock(DISPATCH_LEVEL);
-	KdPrint(("Cancle Irp %p called", Irp));
+	KdPrint(("Cancle Irp %p called\n", Irp));
 	KeAcquireSpinLockAtDpcLevel(&pdodata->q_lock);
 	for (le = pdodata->ioctl_q.Flink;
          le != &pdodata->ioctl_q;
@@ -1615,7 +1641,7 @@ void cancel_irp(PDEVICE_OBJECT pdo, PIRP Irp)
 	if(found){
 		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
 	} else {
-		KdPrint(("Warning, why we can't found it?"));
+		KdPrint(("Warning, why we can't found it?\n"));
 	}
 	Irp->IoStatus.Status = STATUS_CANCELLED;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -1639,39 +1665,40 @@ int try_addq(PPDO_DEVICE_DATA pdodata, PIRP Irp)
     read_irp = pdodata->pending_read_irp;
     pdodata->pending_read_irp=NULL;
     if(NULL==read_irp){
-	   IoSetCancelRoutine(Irp, cancel_irp);
-	   if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
-		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-		return STATUS_CANCELLED;
-           } else {
-		IoMarkIrpPending(Irp);
-		InsertTailList(&pdodata->ioctl_q, &urb_r->list);
-	   }
+		IoSetCancelRoutine(Irp, cancel_irp);
+		if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
+			KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+			ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+			return STATUS_CANCELLED;
+        } else {
+			IoMarkIrpPending(Irp);
+			InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+		}
     } else
 	    seq_num = ++(pdodata->seq_num);
-    KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+
+	KeReleaseSpinLock(&pdodata->q_lock, oldirql);
     if(NULL==read_irp)
 	    return STATUS_PENDING;
-    read_irp->IoStatus.Status = set_read_irp_data(read_irp, Irp, seq_num,
-		    pdodata->devid);
+    read_irp->IoStatus.Status = set_read_irp_data(read_irp, Irp, seq_num, pdodata->devid);
+	
     if(read_irp->IoStatus.Status == STATUS_SUCCESS){
-	KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
-	urb_r->send = 1;
-	urb_r->seq_num = seq_num;
+		KeAcquireSpinLock(&pdodata->q_lock, &oldirql);
+		urb_r->send = 1;
+		urb_r->seq_num = seq_num;
         IoSetCancelRoutine(Irp, cancel_irp);
-	if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
-		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-		status = STATUS_CANCELLED;
-	} else {
-		IoMarkIrpPending(Irp);
-		InsertTailList(&pdodata->ioctl_q, &urb_r->list);
-		KeReleaseSpinLock(&pdodata->q_lock, oldirql);
-	}
+		if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL)) {
+			KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+			ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+			status = STATUS_CANCELLED;
+		} else {
+			IoMarkIrpPending(Irp);
+			InsertTailList(&pdodata->ioctl_q, &urb_r->list);
+			KeReleaseSpinLock(&pdodata->q_lock, oldirql);
+		}
     } else {
-	ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
-	status = STATUS_INVALID_PARAMETER;
+		ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
+		status = STATUS_INVALID_PARAMETER;
     }
     KdPrint(("finish read_irp seqnum %d\n", seq_num));
     IoCompleteRequest(read_irp, IO_NO_INCREMENT);
@@ -1704,22 +1731,21 @@ Bus_Internal_IoCtl (
     }
 
     pdoData = (PPDO_DEVICE_DATA) DeviceObject->DeviceExtension;
-#if 0
-    if (pdoData->Present==FALSE) {
+    
+if (pdoData->Present==FALSE) {
         Irp->IoStatus.Status = status = STATUS_DEVICE_NOT_CONNECTED;
         IoCompleteRequest (Irp, IO_NO_INCREMENT);
         return status;
     }
-#endif
-    buffer = Irp->AssociatedIrp.SystemBuffer;
+
+	buffer = Irp->AssociatedIrp.SystemBuffer;
     inlen = irpStack->Parameters.DeviceIoControl.InputBufferLength;
 
     status = STATUS_INVALID_PARAMETER;
 
     switch(irpStack->Parameters.DeviceIoControl.IoControlCode){
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
-		    status=proc_urb(pdoData,
-				    irpStack->Parameters.Others.Argument1);
+		    status=proc_urb(pdoData, irpStack->Parameters.Others.Argument1);
 		    break;
 	case IOCTL_INTERNAL_USB_GET_PORT_STATUS:
 		    status=STATUS_SUCCESS;
@@ -1736,10 +1762,10 @@ Bus_Internal_IoCtl (
     Irp->IoStatus.Information = 0;
 
     if(status == STATUS_PENDING)
-	 status = try_addq(pdoData,Irp);
+		status = try_addq(pdoData,Irp);
     if(status!=STATUS_PENDING) {
-	Irp->IoStatus.Status = status;
-	IoCompleteRequest (Irp, IO_NO_INCREMENT);
+		Irp->IoStatus.Status = status;
+		IoCompleteRequest (Irp, IO_NO_INCREMENT);
     }
     return status;
 }

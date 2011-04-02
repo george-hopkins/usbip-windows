@@ -1,21 +1,14 @@
+#ifdef __GNUC__
 #define INITGUID
-#include <basetyps.h>
-#include <stdlib.h>
-#include <wtypes.h>
-#include <setupapi.h>
-#include <initguid.h>
-#include <stdio.h>
-#include <string.h>
-#include <winioctl.h>
-#include <ctype.h>
-#include "public.h"
+#endif
 #include "usbip.h"
+#include "public.h"
 
-#define BIG_SIZE 10000000
+#define BIG_SIZE 1000000
 static char *dev_read_buf;
 static char *sock_read_buf;
 
-static char * usbip_vbus_dev_node_name(char *buf, int buf_len)
+static char * usbip_vbus_dev_node_name(char *buf, unsigned long buf_len)
 {
 	HDEVINFO dev_info;
 	SP_DEVICE_INTERFACE_DATA dev_interface_data;
@@ -82,7 +75,7 @@ static char * usbip_vbus_dev_node_name(char *buf, int buf_len)
 		err("Error in SetupDiGetDeviceInterfaceDetail\n");
 		goto end;
 	}
-	len=snprintf(buf, buf_len, "%s", dev_interface_detail->DevicePath);
+	len=_snprintf(buf, buf_len, "%s", dev_interface_detail->DevicePath);
 	if(len>=buf_len)
 		goto end;
 	ret = buf;
@@ -176,9 +169,10 @@ int usbip_vbus_attach_device(HANDLE fd, int port, struct usb_device *udev,
 	return -1;
 }
 
+#ifdef DEBUG
 static void usbip_dump_header(struct usbip_header *pdu)
 {
-	dbg("BASE: cmd %u seq %u devid %u dir %u ep %u\n",
+	dbg_file("BASE: cmd %u seq %u devid %u dir %u ep %u\n",
 			pdu->base.command,
 			pdu->base.seqnum,
 			pdu->base.devid,
@@ -187,7 +181,7 @@ static void usbip_dump_header(struct usbip_header *pdu)
 
 	switch(pdu->base.command) {
 		case USBIP_CMD_SUBMIT:
-			dbg("CMD_SUBMIT: x_flags %u x_len %u sf %u #p %u iv %u\n",
+			dbg_file("CMD_SUBMIT: x_flags %u x_len %u sf %u #p %u iv %u\n",
 					pdu->u.cmd_submit.transfer_flags,
 					pdu->u.cmd_submit.transfer_buffer_length,
 					pdu->u.cmd_submit.start_frame,
@@ -195,23 +189,25 @@ static void usbip_dump_header(struct usbip_header *pdu)
 					pdu->u.cmd_submit.interval);
 					break;
 		case USBIP_CMD_UNLINK:
-			dbg("CMD_UNLINK: seq %u\n", pdu->u.cmd_unlink.seqnum);
+			dbg_file("CMD_UNLINK: seq %u\n", pdu->u.cmd_unlink.seqnum);
 			break;
 		case USBIP_RET_SUBMIT:
-			dbg("RET_SUBMIT: st %d al %u sf %d ec %d\n",
+			dbg_file("RET_SUBMIT: st %d al %u sf %d #p %d ec %d\n",
 					pdu->u.ret_submit.status,
 					pdu->u.ret_submit.actual_length,
 					pdu->u.ret_submit.start_frame,
+					pdu->u.cmd_submit.number_of_packets,
 					pdu->u.ret_submit.error_count);
 			break;
 		case USBIP_RET_UNLINK:
-			dbg("RET_UNLINK: status %d\n", pdu->u.ret_unlink.status);
+			dbg_file("RET_UNLINK: status %d\n", pdu->u.ret_unlink.status);
 			break;
 		default:
 			/* NOT REACHED */
-			dbg("UNKNOWN\n");
+			dbg_file("UNKNOWN\n");
 	}
 }
+#endif
 
 struct fd_info {
 	SOCKET sock;
@@ -240,7 +236,17 @@ static void correct_endian_ret_submit(struct usbip_header_ret_submit *pdu)
 	pdu->status	= ntohl(pdu->status);
 	pdu->actual_length = ntohl(pdu->actual_length);
 	pdu->start_frame = ntohl(pdu->start_frame);
+	pdu->number_of_packets = ntohl(pdu->number_of_packets);
 	pdu->error_count = ntohl(pdu->error_count);
+}
+
+static void correct_endian_cmd_submit(struct usbip_header_cmd_submit *pdu)
+{
+	pdu->transfer_flags	= ntohl(pdu->transfer_flags);
+	pdu->transfer_buffer_length = ntohl(pdu->transfer_buffer_length);
+	pdu->start_frame = ntohl(pdu->start_frame);
+	pdu->number_of_packets = ntohl(pdu->number_of_packets);
+	pdu->interval = ntohl(pdu->interval);
 }
 
 int usbip_header_correct_endian(struct usbip_header *pdu, int send)
@@ -256,6 +262,9 @@ int usbip_header_correct_endian(struct usbip_header *pdu, int send)
 		cmd = pdu->base.command;
 
 	switch (cmd) {
+		case USBIP_CMD_SUBMIT:
+			correct_endian_cmd_submit(&pdu->u.cmd_submit);
+			break;
 		case USBIP_RESET_DEV:
 			break;
 		case USBIP_RET_SUBMIT:
@@ -344,13 +353,22 @@ int write_to_dev(char * buf, int buf_len, int len, SOCKET sockfd,
 	struct usbip_header * u = (struct usbip_header *)buf;
 
 	if(len!=sizeof(*u)){
-		err("read from sock ret %d not equal a usbip_header\n", len);
+		err("read from sock ret %d not equal a usbip_header", len);
+#ifdef DEBUG
+		usbip_dump_buffer(buf,len);
+#endif
 		return -1;
 	}
 	if(usbip_header_correct_endian(u, 0)<0)
 		return -1;
 	dbg_file("recv seq %d\n", u->base.seqnum);
-	//	usbip_dump_header(&u);
+	if ((u->base.seqnum%100)==0)
+		fprintf(stderr,"Receive sequence:    %d\r", u->base.seqnum);
+
+#ifdef DEBUG
+	usbip_dump_header(u);
+#endif
+
 	if(check_out(htonl(u->base.seqnum)))
 		in_len=0;
 	else
@@ -362,8 +380,8 @@ int write_to_dev(char * buf, int buf_len, int len, SOCKET sockfd,
 	if(in_len==0&&iso_len==0){
 		ret=WriteFile(devfd, (char *)u, sizeof(*u), &out, ov);
 		if(!ret||out!=sizeof(*u)){
-			err("last error:%ld\n",GetLastError());
-			err("out:%ld ret:%d\n",out,ret);
+			err("last error:%ld",GetLastError());
+			err("out:%ld ret:%d",out,ret);
 			err("write dev failed");
 			return -1;
 		}
@@ -371,17 +389,18 @@ int write_to_dev(char * buf, int buf_len, int len, SOCKET sockfd,
 	}
 	len = sizeof(*u) + in_len + iso_len;
 	if(len>buf_len){
-		err("too big len %d", len);
+		err("too big len %d %ld %ld", len, in_len,iso_len);
 		return -1;
 	}
 	ret=usbip_recv(sockfd, buf+sizeof(*u),
 		in_len+iso_len);
 	if(ret != in_len + iso_len){
-		err("recv from sock failed %d %ld\n",
+		err("recv from sock failed %d %ld",
 				ret,
 				in_len + iso_len);
 		return -1;
 	}
+
 	if(iso_len)
 		fix_iso_desc_endian(sock_read_buf+sizeof(*u)+in_len,
 					u->u.ret_submit.number_of_packets);
@@ -398,17 +417,29 @@ int write_to_dev(char * buf, int buf_len, int len, SOCKET sockfd,
 int sock_read_async(SOCKET sockfd, HANDLE devfd, OVERLAPPED *ov_sock,
 		OVERLAPPED *ov_dev)
 {
-	int ret, x;
+	int ret, err=0;
 	unsigned long len;
 	do {
 		ret = ReadFile((HANDLE)sockfd,  sock_read_buf,
 			sizeof(struct usbip_header), &len, ov_sock);
-		if(!ret &&  (x=GetLastError())!=ERROR_IO_PENDING) {
-			err("read:%d x:%d\n",ret, x);
+		if (!ret)
+			err=GetLastError();
+
+		if(err==ERROR_IO_PENDING)
+			return 0;
+
+		if(err) {
+			err("read:%d err:%d\n",ret, err);
 			return -1;
 		}
-		if(!ret)
-			return 0;
+
+		if (len!=sizeof(struct usbip_header))
+		{
+			err=GetLastError();
+			err("incomplete header %d %d\n",ret,err);
+		}
+
+		dbg_file("Bytes read from socket synchronously: %d\n",len);
 		ret = write_to_dev(sock_read_buf, BIG_SIZE, len,
 				sockfd, devfd, ov_dev);
 		if(ret<0)
@@ -427,6 +458,7 @@ int sock_read_completed(SOCKET sockfd, HANDLE devfd, OVERLAPPED *ov_sock,
 		err("get overlapping failed: %ld", GetLastError());
 		return -1;
 	}
+	dbg_file("Bytes read from socket asynchronously: %d\n",len);
 	ret = write_to_dev(sock_read_buf, BIG_SIZE, len, sockfd, devfd, ov_dev);
 	if(ret<0)
 		return -1;
@@ -455,21 +487,33 @@ int write_to_sock(char *buf, int len, SOCKET sockfd)
 	else
 		iso_len=0;
 	if(len!= sizeof(*u) + out_len + iso_len){
-		err("read dev ret:%d len:%d out_len:%ld"
+		err("read dev len:%d out_len:%ld"
 				    "iso_len: %ld\n",
-			ret, len, out_len, iso_len);
+			len, out_len, iso_len);
 		return -1;
 	}
 	if(!u->base.direction&&!record_out(u->base.seqnum)){
 		err("out q full");
 		return -1;
 	}
-	dbg_file("send seq:%d\n", ntohl(u->base.seqnum));
+	dbg_file("send seq:%d\r", ntohl(u->base.seqnum));
+//	fprintf(stderr,"Send sequence: %d\n",  ntohl(u->base.seqnum));
+
+
+
 	ret=usbip_send(sockfd, buf, len);
 	if(ret!=len){
 		err("send sock len:%d, ret:%d\n", len, ret);
 		return -1;
 	}
+	#ifdef DEBUG
+	{
+		struct usbip_header cu;
+		memcpy(&cu,u,sizeof(struct usbip_header));
+		usbip_header_correct_endian(&cu,0);
+		usbip_dump_header(&cu);
+	}
+	#endif
 	return 0;
 }
 
@@ -508,51 +552,73 @@ int dev_read_completed(HANDLE devfd, SOCKET sockfd, OVERLAPPED *ov)
 	return dev_read_async(devfd, sockfd, ov);
 }
 
+volatile int signalflag=0;
+
+void __cdecl signalhandler(int signal)
+{
+	signalflag=1;
+	return;
+}
+
 void usbip_vbus_forward(SOCKET sockfd, HANDLE devfd)
 {
 	HANDLE ev[3];
 	OVERLAPPED ov[3];
 	int ret;
 	int i;
+	int err=0;
 
 	dev_read_buf = malloc(BIG_SIZE);
 	sock_read_buf = malloc(BIG_SIZE);
 
 	if(dev_read_buf == NULL||sock_read_buf==NULL){
-		err("faint.can't malloc");
+		err("cannot allocate buffers");
 		return;
 	}
 
 	for(i=0;i<3;i++){
 		ev[i]=CreateEvent(NULL, FALSE, FALSE, NULL);
 		if(NULL==ev[i]){
-			err("can't new event");
+			err("cannot create new events");
 			return;
 		}
 		ov[i].Offset=ov[i].OffsetHigh=0;
 		ov[i].hEvent=ev[i];
 	}
+
+	signal(SIGINT,signalhandler);
+
 	dev_read_async(devfd, sockfd, &ov[0]);
 	sock_read_async(sockfd, devfd, &ov[1], &ov[2]);
 
 	do {
 		dbg_file("wait\n");
-		ret =  WaitForMultipleObjects(2, ev, FALSE, INFINITE);
-		dbg_file("wait out %d\n", ret);
+		ret =  WaitForMultipleObjects(2, ev, FALSE, 100);
+//		dbg_file("wait out %d\n", ret);
 
-		switch (ret){
+		switch (ret) {
+		case WAIT_TIMEOUT:
+			// do nothing just give CTRL-C a chance to be detected
+			break;
 		case WAIT_OBJECT_0:
-			if(dev_read_completed(devfd, sockfd, &ov[0]))
-				return;
+			err=dev_read_completed(devfd, sockfd, &ov[0]);
 			break;
 		case WAIT_OBJECT_0 + 1:
-			if(sock_read_completed(sockfd, devfd, &ov[1], &ov[2]))
-				return;
+			err=sock_read_completed(sockfd, devfd, &ov[1], &ov[2]);
 			break;
 		default:
 			err("unknown ret %d\n",ret);
-			return;
+			err=ret;
+			break;
 		}
-	} while(1);
-	/* FIXME free resouce */
+	} while(err==0&&!signalflag);
+	
+	info("\n");
+	if (signalflag)
+	{
+		info("CTRL-C received\n");
+	}
+	free(dev_read_buf);
+	free(sock_read_buf);
+	return;
 }
