@@ -29,21 +29,21 @@ typedef VOID (*PINTERFACE_DEREFERENCE)(PVOID Context);
 
 typedef
 BOOLEAN
-(*PTOASTER_GET_CRISPINESS_LEVEL)(
+(*PUSBIP_GET_CRISPINESS_LEVEL)(
                            __in   PVOID Context,
                            __out  PUCHAR Level
                                );
 
 typedef
 BOOLEAN
-(*PTOASTER_SET_CRISPINESS_LEVEL)(
+(*PUSBIP_SET_CRISPINESS_LEVEL)(
                            __in   PVOID Context,
                            __out  UCHAR Level
                                );
 
 typedef
 BOOLEAN
-(*PTOASTER_IS_CHILD_PROTECTED)(
+(*PUSBIP_IS_CHILD_PROTECTED)(
                              __in PVOID Context
                              );
 

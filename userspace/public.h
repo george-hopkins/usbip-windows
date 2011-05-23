@@ -5,16 +5,16 @@
 // can send an ioctl to the bus driver.
 //
 
-DEFINE_GUID (GUID_DEVINTERFACE_BUSENUM_TOASTER,
+DEFINE_GUID (GUID_DEVINTERFACE_BUSENUM_USBIP,
         0xD35F7840, 0x6A0C, 0x11d2, 0xB8, 0x41, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
 
 
 //
-// Define a Setup Class GUID for Toaster Class. This is same
+// Define a Setup Class GUID for USBIP Class. This is same
 // as the TOASTSER CLASS guid in the INF files.
 //
 
-DEFINE_GUID (GUID_DEVCLASS_TOASTER,
+DEFINE_GUID (GUID_DEVCLASS_USBIP,
         0xB85B7C50, 0x6A01, 0x11d2, 0xB8, 0x41, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
 //{B85B7C50-6A01-11d2-B841-00C04FAD5171}
 
@@ -22,22 +22,22 @@ DEFINE_GUID (GUID_DEVCLASS_TOASTER,
 // Define a WMI GUID to get busenum info.
 //
 
-DEFINE_GUID (TOASTER_BUS_WMI_STD_DATA_GUID, 
+DEFINE_GUID (USBIP_BUS_WMI_STD_DATA_GUID, 
         0x0006A660, 0x8F12, 0x11d2, 0xB8, 0x54, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
 //{0006A660-8F12-11d2-B854-00C04FAD5171}
 
 //
-// Define a WMI GUID to get toaster device info.
+// Define a WMI GUID to get USBIP device info.
 //
 
-DEFINE_GUID (TOASTER_WMI_STD_DATA_GUID, 
+DEFINE_GUID (USBIP_WMI_STD_DATA_GUID, 
         0xBBA21300L, 0x6DD3, 0x11d2, 0xB8, 0x44, 0x00, 0xC0, 0x4F, 0xAD, 0x51, 0x71);
 
 //
 // Define a WMI GUID to represent device arrival notification WMIEvent class.
 //
 
-DEFINE_GUID (TOASTER_NOTIFY_DEVICE_ARRIVAL_EVENT, 
+DEFINE_GUID (USBIP_NOTIFY_DEVICE_ARRIVAL_EVENT, 
         0x1cdaff1, 0xc901, 0x45b4, 0xb3, 0x59, 0xb5, 0x54, 0x27, 0x25, 0xe2, 0x9c);
 // {01CDAFF1-C901-45b4-B359-B5542725E29C}
 

@@ -84,7 +84,7 @@ Bus_FDO_Power (
     Handles power Irps sent to the FDO.
     This driver is power policy owner for the bus itself
     (not the devices on the bus).Power handling for the bus FDO
-    should be implemented similar to the function driver (toaster.sys)
+    should be implemented similar to the function driver (USBIP.sys)
     power code. We will just print some debug outputs and
     forward this Irp to the next level.
 
@@ -214,7 +214,7 @@ Return Value:
         // wait-wake,  you should send a wait/wake IRP (PoRequestPowerIrp)
         // in response to this request.
         // If you want to test the wait/wake logic implemented in the function
-        // driver (toaster.sys), you could do the following simulation:
+        // driver (USBIP.sys), you could do the following simulation:
         // a) Mark this IRP pending.
         // b) Set a cancel routine.
         // c) Save this IRP in the device extension

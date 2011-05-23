@@ -17,9 +17,9 @@ static char * usbip_vbus_dev_node_name(char *buf, unsigned long buf_len)
 	char *ret=NULL;
 
 	dev_info = SetupDiGetClassDevs(
-		(LPGUID) &GUID_DEVINTERFACE_BUSENUM_TOASTER, /* ClassGuid */
+		(LPGUID) &GUID_DEVINTERFACE_BUSENUM_USBIP, /* ClassGuid */
 		NULL,	/* Enumerator */
-	        NULL,	/* hwndParent */
+		NULL,	/* hwndParent */
 		DIGCF_PRESENT|DIGCF_DEVICEINTERFACE /* Flags */
 	);
 
@@ -34,7 +34,7 @@ static char * usbip_vbus_dev_node_name(char *buf, unsigned long buf_len)
 		dev_info, /* DeviceInfoSet */
 		NULL, /* DeviceInfoData */
 		(LPGUID)
-		&GUID_DEVINTERFACE_BUSENUM_TOASTER, /* InterfaceClassGuid */
+		&GUID_DEVINTERFACE_BUSENUM_USBIP, /* InterfaceClassGuid */
 		0, /* MemberIndex */
 		&dev_interface_data /* DeviceInterfaceData */
 	)) {

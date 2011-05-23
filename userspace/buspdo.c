@@ -448,8 +448,8 @@ Return Value:
     // of the parent devnode. These entries signify the highest-powered
     // state that the device can support for the corresponding system
     // state. A driver can specify a lower (less-powered) state than the
-    // bus driver.  For eg: Suppose the toaster bus controller supports
-    // D0, D2, and D3; and the Toaster Device supports D0, D1, D2, and D3.
+    // bus driver.  For eg: Suppose the USBIP bus controller supports
+    // D0, D2, and D3; and the USBIP Device supports D0, D1, D2, and D3.
     // Following the above rule, the device cannot specify D1 as one of
     // it's power state. A driver can make the rules more restrictive
     // but cannot loosen them.
@@ -921,7 +921,7 @@ Return Value:
 
     //
     // Reporting a I/O port resource may lead to code 12
-    // error on IA64 systems because toaster bus is root
+    // error on IA64 systems because USBIP bus is root
     // enumerated and the resource reported here falls into
     // ISA bus. Since no devices claim the ownership of ISA bus
     // on IA64 system, the system fails to allocate this resource.
@@ -1118,7 +1118,7 @@ Return Value:
     //
     // Some buses have a specific INTERFACE_TYPE value,
     // such as PCMCIABus, PCIBus, or PNPISABus.
-    // For other buses, especially newer buses like TOASTER, the bus
+    // For other buses, especially newer buses like USBIP, the bus
     // driver sets this member to PNPBus.
     //
 
@@ -1257,7 +1257,7 @@ Bus_GetCrispinessLevel(
 
 Routine Description:
 
-    This routine gets the current crispiness level of the toaster.
+    This routine gets the current crispiness level of the USBIP.
 
 Arguments:
 
@@ -1290,7 +1290,7 @@ Bus_SetCrispinessLevel(
 
 Routine Description:
 
-    This routine sets the current crispiness level of the toaster.
+    This routine sets the current crispiness level of the USBIP.
 
 Arguments:
 

@@ -19,12 +19,12 @@ WMIMinorFunctionString (
 #define MOFRESOURCENAME L"BusEnumWMI"
 
 #define NUMBER_OF_WMI_GUIDS                 1
-#define WMI_TOASTER_BUS_DRIVER_INFORMATION  0
+#define WMI_USBIP_BUS_DRIVER_INFORMATION  0
 
-WMIGUIDREGINFO ToasterBusWmiGuidList[] =
+WMIGUIDREGINFO USBIPBusWmiGuidList[] =
 {
     {
-        &TOASTER_BUS_WMI_STD_DATA_GUID, 1, 0 // driver information
+        &USBIP_BUS_WMI_STD_DATA_GUID, 1, 0 // driver information
     }
 };
 
@@ -44,10 +44,10 @@ Routine Description
 
     PAGED_CODE();
 
-    FdoData->WmiLibInfo.GuidCount = sizeof (ToasterBusWmiGuidList) /
+    FdoData->WmiLibInfo.GuidCount = sizeof (USBIPBusWmiGuidList) /
                                  sizeof (WMIGUIDREGINFO);
     ASSERT (NUMBER_OF_WMI_GUIDS == FdoData->WmiLibInfo.GuidCount);
-    FdoData->WmiLibInfo.GuidList = ToasterBusWmiGuidList;
+    FdoData->WmiLibInfo.GuidList = USBIPBusWmiGuidList;
     FdoData->WmiLibInfo.QueryWmiRegInfo = Bus_QueryWmiRegInfo;
     FdoData->WmiLibInfo.QueryWmiDataBlock = Bus_QueryWmiDataBlock;
     FdoData->WmiLibInfo.SetWmiDataBlock = Bus_SetWmiDataBlock;
@@ -67,8 +67,8 @@ Routine Description
     // Initialize the Std device data structure
     //
 
-    FdoData->StdToasterBusData.ErrorCount = 0;
-    FdoData->StdToasterBusData.DebugPrintLevel = BusEnumDebugLevel;
+    FdoData->StdUSBIPBusData.ErrorCount = 0;
+    FdoData->StdUSBIPBusData.DebugPrintLevel = BusEnumDebugLevel;
 
     return status;
 
@@ -257,7 +257,7 @@ Return Value:
 
     switch(GuidIndex) {
 
-    case WMI_TOASTER_BUS_DRIVER_INFORMATION:
+    case WMI_USBIP_BUS_DRIVER_INFORMATION:
 
        if (DataItemId == 2)
         {
@@ -268,7 +268,7 @@ Return Value:
                 break;
            }
 
-           BusEnumDebugLevel = fdoData->StdToasterBusData.DebugPrintLevel =
+           BusEnumDebugLevel = fdoData->StdUSBIPBusData.DebugPrintLevel =
                                     *((PULONG)Buffer);
            status = STATUS_SUCCESS;
         }
@@ -342,9 +342,9 @@ Return Value:
 
 
     switch(GuidIndex) {
-    case WMI_TOASTER_BUS_DRIVER_INFORMATION:
+    case WMI_USBIP_BUS_DRIVER_INFORMATION:
 
-        requiredSize = sizeof(TOASTER_BUS_WMI_STD_DATA);
+        requiredSize = sizeof(USBIP_BUS_WMI_STD_DATA);
 
         if (BufferSize < requiredSize) {
             status = STATUS_BUFFER_TOO_SMALL;
@@ -354,8 +354,8 @@ Return Value:
         //
         // We will update only writable elements.
         //
-        BusEnumDebugLevel = fdoData->StdToasterBusData.DebugPrintLevel =
-                    ((PTOASTER_BUS_WMI_STD_DATA)Buffer)->DebugPrintLevel;
+        BusEnumDebugLevel = fdoData->StdUSBIPBusData.DebugPrintLevel =
+                    ((PUSBIP_BUS_WMI_STD_DATA)Buffer)->DebugPrintLevel;
 
         status = STATUS_SUCCESS;
 
@@ -443,16 +443,16 @@ Return Value:
     fdoData = (PFDO_DEVICE_DATA) DeviceObject->DeviceExtension;
 
     switch (GuidIndex) {
-    case WMI_TOASTER_BUS_DRIVER_INFORMATION:
+    case WMI_USBIP_BUS_DRIVER_INFORMATION:
 
-        size = sizeof (TOASTER_BUS_WMI_STD_DATA);
+        size = sizeof (USBIP_BUS_WMI_STD_DATA);
 
         if (OutBufferSize < size) {
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
 
-        * (PTOASTER_BUS_WMI_STD_DATA) Buffer = fdoData->StdToasterBusData;
+        * (PUSBIP_BUS_WMI_STD_DATA) Buffer = fdoData->StdUSBIPBusData;
         *InstanceLengthArray = size;
         status = STATUS_SUCCESS;
 

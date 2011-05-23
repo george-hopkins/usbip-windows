@@ -25,7 +25,7 @@ Bus_AddDevice(
 /*++
 Routine Description.
 
-    Our Toaster bus has been found.  Attach our FDO to it.
+    Our USBIP bus has been found.  Attach our FDO to it.
     Allocate any required resources.  Set things up.
     And be prepared for the ``start device''
 
@@ -132,7 +132,7 @@ Arguments:
 
     status = IoRegisterDeviceInterface (
                 PhysicalDeviceObject,
-                (LPGUID) &GUID_DEVINTERFACE_BUSENUM_TOASTER,
+                (LPGUID) &GUID_DEVINTERFACE_BUSENUM_USBIP,
                 NULL,
                 &deviceData->InterfaceName);
 
@@ -1052,7 +1052,7 @@ Routine Description:
     - Return from the dispatch routine.
 
     Note that if the device is still connected to the bus (IE in this case
-    the enum application has not yet told us that the toaster device has disappeared)
+    the enum application has not yet told us that the USBIP device has disappeared)
     then the PDO must remain around, and must be returned during any
     query Device relations IRPS.
 

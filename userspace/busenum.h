@@ -147,7 +147,7 @@ extern GLOBALS Globals;
 // Structure for reporting data to WMI
 //
 
-typedef struct _TOASTER_BUS_WMI_STD_DATA {
+typedef struct _USBIP_BUS_WMI_STD_DATA {
 
     //
     // The error Count
@@ -160,7 +160,7 @@ typedef struct _TOASTER_BUS_WMI_STD_DATA {
 
     UINT32  DebugPrintLevel;
 
-} TOASTER_BUS_WMI_STD_DATA, * PTOASTER_BUS_WMI_STD_DATA;
+} USBIP_BUS_WMI_STD_DATA, * PUSBIP_BUS_WMI_STD_DATA;
 
 
 //
@@ -200,7 +200,7 @@ typedef struct _COMMON_DEVICE_DATA
 
 //
 // The device extension for the PDOs.
-// That's of the toaster device which this bus driver enumerates.
+// That's of the USBIP device which this bus driver enumerates.
 //
 
 typedef struct _PDO_DEVICE_DATA
@@ -333,7 +333,7 @@ typedef struct _FDO_DEVICE_DATA
 
     WMILIB_CONTEXT         WmiLibInfo;
 
-    TOASTER_BUS_WMI_STD_DATA   StdToasterBusData;
+    USBIP_BUS_WMI_STD_DATA   StdUSBIPBusData;
 } FDO_DEVICE_DATA, *PFDO_DEVICE_DATA;
 
 struct urb_req {

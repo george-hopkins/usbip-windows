@@ -11,7 +11,7 @@ Signature="$WINDOWS NT$"
 Class=System
 ClassGuid={4D36E97D-E325-11CE-BFC1-08002BE10318}
 Provider=%OpenSource%
-DriverVer=02/13/2011,0.1.0.0
+DriverVer=04/22/2011,0.2.0.0
 CatalogFile=USBIPEnum.cat
 
 [Manufacturer]
