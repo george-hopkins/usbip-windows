@@ -75,6 +75,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="usbip.c" />
+    <ClCompile Include="usbip_attach.c" />
+    <ClCompile Include="usbip_detach.c" />
+    <ClCompile Include="usbip_list.c" />
     <ClCompile Include="usbip_network.c" />
     <ClCompile Include="usbip_windows.c" />
     <ClCompile Include="windows\getopt.c" />
@@ -83,6 +86,7 @@
   <ItemGroup>
     <ClInclude Include="..\config.h" />
     <ClInclude Include="..\libsrc\usbip.h" />
+    <ClInclude Include="usbip.h" />
     <ClInclude Include="usbip_network.h" />
     <ClInclude Include="usbip_windows.h" />
     <ClInclude Include="windows\getopt.h" />

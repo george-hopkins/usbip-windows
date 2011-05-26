@@ -3,7 +3,7 @@
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
  */
 
-#include "usbip.h"
+#include "usbip_common.h"
 #include "usbip_network.h"
 #include "usbip_windows.h"
 
@@ -11,11 +11,6 @@
 #include <setupapi.h>
 #include <initguid.h>
 #include <winioctl.h>
-
-int attach_devices_all(char *host)
-{
-	return 0;
-}
 
 
 #ifdef __GNUC__

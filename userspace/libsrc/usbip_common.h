@@ -27,7 +27,8 @@
 #include <sysfs/libsysfs.h>
 #include <netdb.h>
 #include <sys/socket.h>
-
+#else
+#include "usbip.h"
 #endif
 
 #ifndef USBIDS_FILE

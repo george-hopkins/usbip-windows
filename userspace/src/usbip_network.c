@@ -4,7 +4,7 @@
  */
 
 #ifndef __linux__
-#include "usbip.h"
+#include "usbip_common.h"
 #endif
 #include "usbip_network.h"
 

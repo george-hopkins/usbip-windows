@@ -36,8 +36,10 @@ typedef signed int ssize_t;
 #endif /* !__linux__ */
 
 #include "usbip_common.h"
+#ifdef __linux__
 #include "stub_driver.h"
 #include "vhci_driver.h"
+#endif
 #ifdef DMALLOC
 #include <dmalloc.h>
 #endif
