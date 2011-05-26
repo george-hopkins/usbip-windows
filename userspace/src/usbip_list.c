@@ -154,7 +154,11 @@ static int show_exported_devices(char *host)
 		return -1;
 	}
 
+#ifdef __linux__
 	close(sockfd);
+#else
+	closesocket(sockfd);
+#endif
 	return 0;
 }
 

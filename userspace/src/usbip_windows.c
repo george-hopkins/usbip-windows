@@ -885,7 +885,7 @@ int attach_device(char * host, char * busid)
 	HANDLE devfd=INVALID_HANDLE_VALUE;
 	struct usb_interface uinf;
 
-	sockfd = tcp_connect(host, USBIP_PORT_STRING);
+	sockfd = usbip_net_tcp_connect(host, USBIP_PORT_STRING);
 	if (INVALID_SOCKET == sockfd) {
 		err("tcp connect");
 		return 0;
@@ -895,7 +895,7 @@ int attach_device(char * host, char * busid)
 		return 0;
 	}
 	closesocket(sockfd);
-	sockfd = tcp_connect(host, USBIP_PORT_STRING);
+	sockfd = usbip_net_tcp_connect(host, USBIP_PORT_STRING);
 	if (INVALID_SOCKET == sockfd) {
 		err("tcp connect");
 		return 0;
