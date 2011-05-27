@@ -51,8 +51,9 @@ static int parse_status(char *value)
 	char *c;
 	int i;
 
+
 	for (i = 0; i < vhci_driver->nports; i++)
-		bzero(&vhci_driver->idev[i], sizeof(struct usbip_imported_device));
+		memset(&vhci_driver->idev[i], 0, sizeof(vhci_driver->idev[i]));
 
 
 	/* skip a header line */
