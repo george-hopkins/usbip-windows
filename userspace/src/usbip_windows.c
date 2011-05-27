@@ -229,8 +229,8 @@ int usbip_vbus_detach_device(HANDLE fd, int port)
 	return -1;
 }
 
-int usbip_vbus_attach_device(HANDLE fd, int port, struct usb_device *udev,
-		struct usb_interface *uinf0)
+int usbip_vbus_attach_device(HANDLE fd, int port, struct usbip_usb_device *udev,
+		struct usbip_usb_interface *uinf0)
 {
 	int ret;
 	ioctl_usbvbus_plugin  plugin;
@@ -707,8 +707,8 @@ void usbip_vbus_forward(SOCKET sockfd, HANDLE devfd)
 }
 
 
-static int import_device(int sockfd, struct usb_device *udev,
-		struct usb_interface *uinf0,
+static int import_device(int sockfd, struct usbip_usb_device *udev,
+		struct usbip_usb_interface *uinf0,
 		HANDLE *devfd)
 {
 	HANDLE fd;
@@ -743,7 +743,7 @@ static int import_device(int sockfd, struct usb_device *udev,
 }
 
 static int query_import_device(int sockfd, char *busid,
-		struct usb_interface *uinf0, HANDLE * fd)
+		struct usbip_usb_interface *uinf0, HANDLE * fd)
 {
 	int ret;
 	struct op_import_request request;
@@ -796,7 +796,7 @@ static int query_import_device(int sockfd, char *busid,
 	return import_device(sockfd, &reply.udev, uinf0, fd);
 }
 
-static int query_interface0(SOCKET sockfd, char * busid, struct usb_interface * uinf0)
+static int query_interface0(SOCKET sockfd, char * busid, struct usbip_usb_interface * uinf0)
 {
 	int ret;
 	struct op_devlist_reply rep;
@@ -804,8 +804,8 @@ static int query_interface0(SOCKET sockfd, char * busid, struct usb_interface * 
 	uint32_t i,j;
 	char product_name[100];
 	char class_name[100];
-	struct usb_device udev;
-	struct usb_interface uinf;
+	struct usbip_usb_device udev;
+	struct usbip_usb_interface uinf;
 	int found=0;
 
 	memset(&rep, 0, sizeof(rep));
@@ -837,7 +837,7 @@ static int query_interface0(SOCKET sockfd, char * busid, struct usb_interface * 
 
 		ret = usbip_recv(sockfd, (void *) &udev, sizeof(udev));
 		if (ret < 0) {
-			err("recv usb_device[%d]", i);
+			err("recv usbip_usb_device[%d]", i);
 			return -1;
 		}
 		pack_usb_device(0, &udev);
@@ -854,7 +854,7 @@ static int query_interface0(SOCKET sockfd, char * busid, struct usb_interface * 
 
 			ret = usbip_recv(sockfd, (void *) &uinf, sizeof(uinf));
 			if (ret < 0) {
-				err("recv usb_interface[%d]", j);
+				err("recv usbip_usb_interface[%d]", j);
 				return -1;
 			}
 
@@ -883,7 +883,7 @@ int attach_device(char * host, char * busid)
 	SOCKET sockfd;
 	int rhport;
 	HANDLE devfd=INVALID_HANDLE_VALUE;
-	struct usb_interface uinf;
+	struct usbip_usb_interface uinf;
 
 	sockfd = usbip_net_tcp_connect(host, USBIP_PORT_STRING);
 	if (INVALID_SOCKET == sockfd) {

@@ -144,8 +144,8 @@ int usbip_vbus_detach_device(HANDLE fd, int port)
 	return -1;
 }
 
-int usbip_vbus_attach_device(HANDLE fd, int port, struct usb_device *udev,
-		struct usb_interface *uinf0)
+int usbip_vbus_attach_device(HANDLE fd, int port, struct usbip_usb_device *udev,
+		struct usbip_usb_interface *uinf0)
 {
 	int ret;
 	ioctl_usbvbus_plugin  plugin;
