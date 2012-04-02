@@ -130,7 +130,7 @@
 #define STDC_HEADERS 1
 
 /* numeric version number */
-#define USBIP_VERSION 0x000106
+#define USBIP_VERSION 0x000111
 
 /* Version number of package */
 #define VERSION "0.2.0"
