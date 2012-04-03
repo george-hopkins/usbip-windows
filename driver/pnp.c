@@ -987,6 +987,7 @@ void complete_pending_read_irp(PPDO_DEVICE_DATA pdodata)
 	if(NULL==irp)
 		return;
 	irp->IoStatus.Status = STATUS_DEVICE_NOT_CONNECTED;
+	IoSetCancelRoutine(irp, NULL);
 	IoCompleteRequest (irp, IO_NO_INCREMENT);
 	return;
 }
@@ -1029,6 +1030,7 @@ void complete_pending_irp(PPDO_DEVICE_DATA pdodata)
 	}
 	ExFreeToNPagedLookasideList(&g_lookaside, urb_r);
 	irp->IoStatus.Status = STATUS_DEVICE_NOT_CONNECTED;
+	IoSetCancelRoutine(irp, NULL);
 	IoCompleteRequest (irp, IO_NO_INCREMENT);
 	count++;
     }while(1);
