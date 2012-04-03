@@ -1226,7 +1226,7 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
 		HARDWARE_IDS_TPL,
 	        plugin->vendor, plugin->product, plugin->version,
 	        plugin->vendor, plugin->product);
-    for(i=0;i<sizeof(HARDWARE_IDS_TPL);i++){
+    for(i=0;i<len/sizeof(wchar_t);i++){
 	    if('Z'==pdodata->HardwareIDs[i])
 		    pdodata->HardwareIDs[i]=0;
     }
@@ -1252,7 +1252,7 @@ NTSTATUS bus_plugin_dev(ioctl_usbvbus_plugin * plugin, PFDO_DEVICE_DATA  fdodata
 	        plugin->int0_class, plugin->int0_subclass, plugin->int0_protocol,
 		plugin->int0_class, plugin->int0_subclass,
 		plugin->int0_class);
-    for(i=0;i<len;i++){
+    for(i=0;i<len/sizeof(wchar_t);i++){
 	    if('Z'==pdodata->compatible_ids[i])
 		    pdodata->compatible_ids[i]=0;
     }
