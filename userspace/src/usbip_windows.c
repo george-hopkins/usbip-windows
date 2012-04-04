@@ -33,76 +33,146 @@ static char * usbip_vbus_dev_node_name(char *buf, unsigned long buf_len)
 	HDEVINFO dev_info;
 	SP_DEVICE_INTERFACE_DATA dev_interface_data;
 	PSP_DEVICE_INTERFACE_DETAIL_DATA dev_interface_detail = NULL;
+	SP_DEVINFO_DATA dev_info_data;
 	unsigned long len;
 	char *ret=NULL;
+	int memberIndex = 0, rc = 1;
+	char hardwareID[256] = {0};
 
+	// Get devices info.
 	dev_info = SetupDiGetClassDevs(
 		(LPGUID) &GUID_DEVINTERFACE_BUSENUM_USBIP, /* ClassGuid */
 		NULL,	/* Enumerator */
 		NULL,	/* hwndParent */
 		DIGCF_PRESENT|DIGCF_DEVICEINTERFACE /* Flags */
 	);
-
 	if (INVALID_HANDLE_VALUE == dev_info) {
 		err("SetupDiGetClassDevs failed: %ld\n", GetLastError());
 		return NULL;
 	}
 
+	// Prepare some structures.
 	dev_interface_data.cbSize = sizeof (dev_interface_data);
+	dev_info_data.cbSize = sizeof(SP_DEVINFO_DATA);
 
-	if (!SetupDiEnumDeviceInterfaces(
-		dev_info, /* DeviceInfoSet */
-		NULL, /* DeviceInfoData */
-		(LPGUID)
-		&GUID_DEVINTERFACE_BUSENUM_USBIP, /* InterfaceClassGuid */
-		0, /* MemberIndex */
-		&dev_interface_data /* DeviceInterfaceData */
-	)) {
-		if (ERROR_NO_MORE_ITEMS == GetLastError())
+	// Loop reading information from the devices until we get some error.
+	while (rc) {
+		// Get device info data.
+		rc = SetupDiEnumDeviceInfo(
+			dev_info,		/* DeviceInfoSet */
+			memberIndex,	/* MemberIndex */
+			&dev_info_data	/* DeviceInfoData */
+		);
+		if (!rc) {
+			if (GetLastError() == ERROR_NO_MORE_ITEMS) {
+				// No more items. Leave.
+				memberIndex = -1;
+				break;
+			} else {
+				// Something else...
+				err("error getting device information\n");
+				goto end;
+			}
+		}
+
+		// Get hardware ID.
+		rc = SetupDiGetDeviceRegistryProperty(
+			dev_info,			/* DeviceInfoSet */
+			&dev_info_data,		/* DeviceInfoData */
+			SPDRP_HARDWAREID,	/* Property */
+			0L,					/* PropertyRegDataType */
+			(PBYTE)hardwareID,	/* PropertyBuffer */
+			sizeof(hardwareID),	/* PropertyBufferSize */
+			0L					/* RequiredSize */
+		);
+		if (!rc) {
+			// We got some error reading the hardware id. I'm pretty sure this isn't supposed
+			// to happen, but let's continue anyway.
+			memberIndex++;
+			continue;
+		}
+
+		// Check if we got the correct device.
+		if (strcmp(hardwareID, "root\\usbipenum") != 0) {
+			// Wrong hardware ID. Get the next one.
+			memberIndex++;
+			continue;
+		} else {
+			// Got it!
+			break;
+		}
+	}
+
+	// Get device interfaces.
+	rc = SetupDiEnumDeviceInterfaces(
+		dev_info,									/* DeviceInfoSet */
+		NULL,										/* DeviceInfoData */
+		(LPGUID) &GUID_DEVINTERFACE_BUSENUM_USBIP,	/* InterfaceClassGuid */
+		memberIndex,								/* MemberIndex */
+		&dev_interface_data							/* DeviceInterfaceData */
+	);
+	if (!rc) {
+		// No more items here isn't supposed to happen since we checked that on the
+		// SetupDiEnumDeviceInfo, but there's no harm checking again.
+		if (ERROR_NO_MORE_ITEMS == GetLastError()) {
 			err("usbvbus interface is not registered\n");
-		else
+		} else {
 			err("unknown error when get interface_data\n");
+		}
 		goto end;
 	}
-	SetupDiGetDeviceInterfaceDetail(
-		dev_info, /* DeviceInfoSet */
-		&dev_interface_data, /* DeviceInterfaceData */
-		NULL,	/* DeviceInterfaceDetailData */
-		0,	/* DeviceInterfaceDetailDataSize */
-		&len,	/* RequiredSize */
-		NULL	/* DeviceInfoData */);
 
+	// Get required length for dev_interface_detail.
+	rc = SetupDiGetDeviceInterfaceDetail(
+		dev_info,				/* DeviceInfoSet */
+		&dev_interface_data,	/* DeviceInterfaceData */
+		NULL,					/* DeviceInterfaceDetailData */
+		0,						/* DeviceInterfaceDetailDataSize */
+		&len,					/* RequiredSize */
+		NULL					/* DeviceInfoData */
+	);
 	if (ERROR_INSUFFICIENT_BUFFER != GetLastError()) {
-		err("Error in SetupDiGetDeviceInterfaceDetail%ld\n",
-		       GetLastError());
+		err("Error in SetupDiGetDeviceInterfaceDetail: %ld\n", GetLastError());
 		goto end;
 	}
 
-	dev_interface_detail = malloc(len);
-	if(NULL == dev_interface_detail){
+	// Allocate the required memory and set the cbSize.
+	dev_interface_detail = (PSP_DEVICE_INTERFACE_DETAIL_DATA)malloc(len);
+	if (NULL == dev_interface_detail) {
 		err("can't malloc %lu size memoery", len);
 		goto end;
 	}
 	dev_interface_detail->cbSize = sizeof (*dev_interface_detail);
 
-	if (!SetupDiGetDeviceInterfaceDetail(
-		dev_info, /* DeviceInfoSet */
-		&dev_interface_data, /* DeviceInterfaceData */
+	// Try to get device details.
+	rc = SetupDiGetDeviceInterfaceDetail(
+		dev_info,				/* DeviceInfoSet */
+		&dev_interface_data,	/* DeviceInterfaceData */
 		dev_interface_detail,	/* DeviceInterfaceDetailData */
-		len,	/* DeviceInterfaceDetailDataSize */
-		&len,	/* RequiredSize */
-		NULL	/* DeviceInfoData */)){
+		len,					/* DeviceInterfaceDetailDataSize */
+		&len,					/* RequiredSize */
+		NULL					/* DeviceInfoData */
+	);
+	if (!rc) {
+		// Errors.
 		err("Error in SetupDiGetDeviceInterfaceDetail\n");
 		goto end;
 	}
-	len=_snprintf(buf, buf_len, "%s", dev_interface_detail->DevicePath);
-	if(len>=buf_len)
+
+	// Copy the device path to the buffer.
+	len = _snprintf(buf, buf_len, "%s", dev_interface_detail->DevicePath);
+	if (len>=buf_len) {
 		goto end;
+	}
 	ret = buf;
+
 end:
-	if(dev_interface_detail)
+	// Free the detail memory and destroy the device information list.
+	if (dev_interface_detail) {
 		free(dev_interface_detail);
+	}
 	SetupDiDestroyDeviceInfoList(dev_info);
+
 	return ret;
 }
 
