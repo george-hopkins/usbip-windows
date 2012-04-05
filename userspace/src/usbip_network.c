@@ -62,10 +62,23 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 		if (sending)
 			nbytes = send(sockfd, buff, bufflen, 0);
 		else
-			nbytes = recv(sockfd, buff, bufflen, MSG_WAITALL);
+			nbytes = recv(sockfd, buff, bufflen, 0);
 
-		if (nbytes <= 0)
+		if (nbytes <= 0) {
+			LPVOID lpMsgBuf;
+
+			// Get error information.
+			int err = WSAGetLastError();
+
+			if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL)) {
+				fprintf(stderr, "[usbip_xmit] recv() returned %d - error %d: %s\n", nbytes, err, lpMsgBuf);
+				LocalFree(lpMsgBuf);
+			} else {
+				fprintf(stderr, "[usbip_xmit] recv() returned %d - error %d\n", nbytes, err);
+			}
+
 			return -1;
+		}
 
 		buff	= (void *) ((intptr_t) buff + nbytes);
 		bufflen	-= nbytes;
