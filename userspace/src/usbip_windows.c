@@ -913,11 +913,11 @@ int attach_device(char * host, char * busid)
 	info("new usb device attached to usbvbus port %d\n", rhport);
 	usbip_vbus_forward(sockfd, devfd);
 	
-	dbg("closing connection to device");
-	CloseHandle(devfd);
-
 	dbg("detaching device");
 	usbip_vbus_detach_device(devfd,rhport);
+
+	dbg("closing connection to device");
+	CloseHandle(devfd);
 
 	dbg("closing connection to peer");
 	closesocket(sockfd);
