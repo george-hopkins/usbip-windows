@@ -848,6 +848,9 @@ int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 		case USB_CONFIGURATION_DESCRIPTOR_TYPE:
 			setup->wIndex = 0;
 			break;
+		case USB_INTERFACE_DESCRIPTOR_TYPE:
+			setup->wIndex = req->Index;
+			break;
 		case USB_STRING_DESCRIPTOR_TYPE:
 			setup->wIndex = req->LanguageId;
 			break;
