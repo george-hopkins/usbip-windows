@@ -841,7 +841,7 @@ int prepare_get_dev_descriptor_urb( struct _URB_CONTROL_DESCRIPTOR_REQUEST * req
 	BMREQUEST_STANDARD, BMREQUEST_TO_DEVICE, USB_REQUEST_GET_DESCRIPTOR);
 
 	setup->wLength = (unsigned short)req->TransferBufferLength;
-	setup->wValue = (req->DescriptorType<<8) |req->Index<<8;
+	setup->wValue = (req->DescriptorType<<8) | req->Index;
 
 	switch(req->DescriptorType){
 		case USB_DEVICE_DESCRIPTOR_TYPE:
