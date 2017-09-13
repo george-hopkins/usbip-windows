@@ -5,39 +5,15 @@
 #ifndef _USBIP_H
 #define _USBIP_H
 
+#ifdef HAVE_CONFIG_H
 #include "../config.h"
-
-#define _CRT_SECURE_NO_WARNINGS
-#include <stdint.h>
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <limits.h>
+#endif
 
 #define UNUSED(x) (void)(x)
 
-#ifdef __linux__
+#ifndef __linux__
 
-#include <unistd.h>
-#include <strings.h>
-#include <syslog.h>
-
-#include <netdb.h>
-#include <fcntl.h>
-
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-
-#include <sysfs/libsysfs.h>
-
-#include <netinet/tcp.h>
-
-#define closesocket close
-
-#else
+#define _CRT_SECURE_NO_WARNINGS
 
 #define USBIDS_FILE "usb.ids"
 
@@ -55,7 +31,7 @@ typedef signed int ssize_t;
 #define snprintf _snprintf
 #define syslog(...) /* ... */
 
-#endif
+#endif /* !__linux__ */
 
 #include "usbip_common.h"
 #include "stub_driver.h"

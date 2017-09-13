@@ -14,6 +14,13 @@
 #define PACKED /* */
 #endif
 
+#ifdef __linux__
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h>
+#endif
+
+
 /* -------------------------------------------------- */
 /* Define Protocol Format                             */
 /* -------------------------------------------------- */

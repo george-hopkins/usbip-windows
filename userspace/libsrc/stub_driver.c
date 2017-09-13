@@ -2,6 +2,12 @@
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
  */
 
+#ifdef __linux__
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include "usbip.h"
 
 /* kernel module name */

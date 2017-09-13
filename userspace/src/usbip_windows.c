@@ -5,7 +5,7 @@
 
 #include "usbip.h"
 #include "usbip_network.h"
-#include "usbip_osspecific.h"
+#include "usbip_windows.h"
 
 #include <windows.h>
 #include <setupapi.h>

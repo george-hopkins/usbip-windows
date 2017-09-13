@@ -3,7 +3,9 @@
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
  */
 
+#ifndef __linux__
 #include "usbip.h"
+#endif
 #include "usbip_network.h"
 
 void pack_uint32_t(int pack, uint32_t *num)
@@ -65,6 +67,7 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 			nbytes = recv(sockfd, buff, bufflen, 0);
 
 		if (nbytes <= 0) {
+#ifndef __linux__
 			LPVOID lpMsgBuf;
 
 			// Get error information.
@@ -76,7 +79,7 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 			} else {
 				fprintf(stderr, "[usbip_xmit] recv() returned %d - error %d\n", nbytes, err);
 			}
-
+#endif
 			return -1;
 		}
 
@@ -248,7 +251,11 @@ int tcp_connect(char *hostname, char *service)
 
 		err = connect(sockfd, res->ai_addr, res->ai_addrlen);
 		if (err < 0) {
+#ifdef __linux__
+			close(sockfd);
+#else
 			closesocket(sockfd);
+#endif
 			continue;
 		}
 

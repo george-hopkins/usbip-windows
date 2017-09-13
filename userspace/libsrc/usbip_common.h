@@ -13,6 +13,23 @@
 #endif
 
 
+
+#include <stdint.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#ifdef __linux__
+#include <unistd.h>
+#include <syslog.h>
+#include <strings.h>
+#include <sysfs/libsysfs.h>
+#include <netdb.h>
+#include <sys/socket.h>
+
+#endif
+
 #ifndef USBIDS_FILE
 #define USBIDS_FILE "/usr/share/hwdata/usb.ids"
 #endif
@@ -21,6 +38,7 @@
 #define VHCI_STATE_PATH "/var/run/vhci_hcd"
 #endif
 
+//#include <linux/usb_ch9.h>
 enum usb_device_speed {
 	USB_SPEED_UNKNOWN = 0,                  /* enumerating */
 	USB_SPEED_LOW, USB_SPEED_FULL,          /* usb 1.1 */
@@ -92,6 +110,7 @@ extern int usbip_use_debug ;
 	} \
 } while (0)
 
+
 #define BUG()	do { err("sorry, it's a bug"); abort(); } while (0)
 
 
@@ -123,6 +142,8 @@ struct usb_device {
 	uint8_t bNumConfigurations;
 	uint8_t bNumInterfaces;
 } PACKED;
+
+#ifndef __linux__
 
 /*
  * USB/IP request headers.
@@ -246,6 +267,7 @@ struct usbip_header {
 	} u;
 } PACKED;
 
+#endif /* !__linux__ */
 
 #define to_string(s)	#s
 

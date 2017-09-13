@@ -1,5 +1,5 @@
-#ifndef _USBIP_OS_H
-#define _USBIP_OS_H
+#ifndef _USBIP_WINDOWS_H
+#define _USBIP_WINDOWS_H
 
 int attach_devices_all(char *host);
 int show_port_status(void);

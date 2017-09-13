@@ -28,8 +28,22 @@
 
 /*****************************************************************************/
 
-#include "usbip.h"
+#ifdef __linux__
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <unistd.h>
+#endif
+#include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <ctype.h>
 
+#ifndef __linux__
+#include "usbip.h"
+#endif
 #include "names.h"
 
 

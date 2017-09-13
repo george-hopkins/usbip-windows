@@ -4,7 +4,7 @@ LDADD       := $(top_srcdir)/libsrc/libusbip.la @PACKAGE_LIBS@
 
 sbin_PROGRAMS := usbip usbipd usbip_bind_driver
 
-usbip_SOURCES = usbip.c usbip_network.c usbip_network.h usbip_linux.c usbip_platform.h
+usbip_SOURCES := usbip.c usbip_network.c usbip_network.h
 usbipd_SOURCES := usbipd.c usbip_network.c usbip_network.h
 usbip_bind_driver_SOURCES := bind-driver.c utils.c utils.h \
 			     usbip_network.h usbip_network.c
