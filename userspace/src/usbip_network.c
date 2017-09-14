@@ -68,7 +68,7 @@ static ssize_t usbip_xmit(int sockfd, void *buff, size_t bufflen, int sending)
 
 		if (nbytes <= 0) {
 #ifndef __linux__
-			LPVOID lpMsgBuf;
+			LPTSTR lpMsgBuf;
 
 			// Get error information.
 			int err = WSAGetLastError();
