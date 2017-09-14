@@ -48,6 +48,7 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>..\libsrc; windows</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>HAVE_CONFIG_H</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -75,25 +76,16 @@
   <ItemGroup>
     <ClCompile Include="usbip.c" />
     <ClCompile Include="usbip_network.c" />
-    <ClCompile Include="usbip_linux.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="usbip_windows.c" />
     <ClCompile Include="windows\getopt.c" />
     <ClCompile Include="windows\getopt_long.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\confdefs.h" />
+    <ClInclude Include="..\config.h" />
     <ClInclude Include="..\libsrc\usbip.h" />
-    <ClInclude Include="public.h" />
     <ClInclude Include="usbip_network.h" />
-    <ClInclude Include="usbip_osspecific.h" />
+    <ClInclude Include="usbip_windows.h" />
     <ClInclude Include="windows\getopt.h" />
-    <ClInclude Include="win_stub.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="todo.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

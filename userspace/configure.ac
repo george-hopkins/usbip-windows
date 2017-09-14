@@ -1,4 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
+dnl Keep this file in sync with config_windows.h.
 
 AC_PREREQ(2.59)
 AC_INIT([usbip], [0.2.0], [usbip-devel@lists.sourceforge.net])
