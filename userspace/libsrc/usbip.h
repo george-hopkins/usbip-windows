@@ -28,7 +28,9 @@ typedef signed int ssize_t;
 #define SYSFS_PATH_MAX		256
 #define SYSFS_BUS_ID_SIZE	32
 
+#ifndef _UCRT
 #define snprintf _snprintf
+#endif
 #define syslog(...) /* ... */
 
 #endif /* !__linux__ */
