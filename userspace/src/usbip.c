@@ -26,6 +26,9 @@
 
 #include "usbip_common.h"
 #include "usbip.h"
+#ifndef __linux__
+#include "usbip_windows.h"
+#endif
 
 static int usbip_help(int argc, char *argv[]);
 static int usbip_version(int argc, char *argv[]);
