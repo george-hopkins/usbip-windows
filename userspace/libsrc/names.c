@@ -46,6 +46,10 @@
 #endif
 #include "names.h"
 
+#ifndef __linux__
+#define isspace(x) isspace((unsigned char)(x))
+#endif
+
 
 /* ---------------------------------------------------------------------- */
 
