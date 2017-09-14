@@ -53,47 +53,47 @@ struct command {
 
 static const struct command cmds[] = {
 	{
-		.name  = "help",
-		.fn    = usbip_help,
-		.help  = NULL,
-		.usage = NULL
+		"help",
+		usbip_help,
+		NULL,
+		NULL
 	},
 	{
-		.name  = "version",
-		.fn    = usbip_version,
-		.help  = NULL,
-		.usage = NULL
+		"version",
+		usbip_version,
+		NULL,
+		NULL
 	},
 	{
-		.name  = "attach",
-		.fn    = usbip_attach,
-		.help  = "Attach a remote USB device",
-		.usage = usbip_attach_usage
+		"attach",
+		usbip_attach,
+		"Attach a remote USB device",
+		usbip_attach_usage
 	},
 	{
-		.name  = "detach",
-		.fn    = usbip_detach,
-		.help  = "Detach a remote USB device",
-		.usage = usbip_detach_usage
+		"detach",
+		usbip_detach,
+		"Detach a remote USB device",
+		usbip_detach_usage
 	},
 	{
-		.name  = "list",
-		.fn    = usbip_list,
-		.help  = "List exported or local USB devices",
-		.usage = usbip_list_usage
+		"list",
+		usbip_list,
+		"List exported or local USB devices",
+		usbip_list_usage
 	},
 #ifdef __linux__
 	{
-		.name  = "bind",
-		.fn    = usbip_bind,
-		.help  = "Bind device to " USBIP_HOST_DRV_NAME ".ko",
-		.usage = usbip_bind_usage
+		"bind",
+		usbip_bind,
+		"Bind device to " USBIP_HOST_DRV_NAME ".ko",
+		usbip_bind_usage
 	},
 	{
-		.name  = "unbind",
-		.fn    = usbip_unbind,
-		.help  = "Unbind device from " USBIP_HOST_DRV_NAME ".ko",
-		.usage = usbip_unbind_usage
+		"unbind",
+		usbip_unbind,
+		"Unbind device from " USBIP_HOST_DRV_NAME ".ko",
+		usbip_unbind_usage
 	},
 #endif
 	{ NULL, NULL, NULL, NULL }
